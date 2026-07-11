@@ -20,7 +20,6 @@ import {
 import Sidebar from './components/Sidebar';
 import RequestDetailModal from './components/RequestDetailModal';
 import LoginView from './components/LoginView';
-import InitialSetupView from './components/InitialSetupView';
 
 const DashboardView = React.lazy(() => import('./components/DashboardView'));
 const MyRequestsView = React.lazy(() => import('./components/MyRequestsView'));
@@ -60,12 +59,6 @@ import {
 const AdminConfigView = React.lazy(() => import('./components/AdminConfigView'));
 
 export default function App() {
-  const [isInitialSetupCompleted, setIsInitialSetupCompleted] = useState(() => {
-    const hasCompany = localStorage.getItem('okey_initial_company_data_filled') === 'true';
-    const hasAdmin = getDbUsers().some(u => u.approval_level === 'Administrator');
-    return hasCompany && hasAdmin;
-  });
-
   const [activeTab, setActiveTab] = useState('dashboard');
   const [requests, setRequests] = useState<ExpenseRequest[]>([]);
   const [budgets, setBudgets] = useState<DepartmentBudget[]>([]);
@@ -862,17 +855,6 @@ export default function App() {
     setCurrentUser(null);
     localStorage.removeItem('okey_simulated_user_id');
   };
-
-  if (!isInitialSetupCompleted) {
-    return (
-      <InitialSetupView 
-        onSetupCompleted={() => {
-          setIsInitialSetupCompleted(true);
-          loadDatabase();
-        }} 
-      />
-    );
-  }
 
   if (!currentUser) {
     return (

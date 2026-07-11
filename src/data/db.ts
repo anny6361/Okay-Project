@@ -50,6 +50,35 @@ export function validateThaiNationalID(id: string): boolean {
 
 export const INITIAL_USERS: UserProfile[] = [
   {
+    user_id: 'user-superadmin',
+    employee_id: 'Okay9999',
+    username: 'Okay9999',
+    name: 'Super Administrator',
+    email: 'superadmin@okey.com',
+    phone: '099-999-9999',
+    password: 'Okay.co.ltd',
+    department: 'ผู้ดูแลระบบสูงสุด',
+    position: 'Super Administrator',
+    role: 'Administrator',
+    is_active: true,
+    approval_level: 'Administrator',
+    force_password_change: true,
+    signatureUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c5/John_F._Kennedy_Signature.png',
+    title: 'นาย',
+    firstName: 'Super',
+    lastName: 'Administrator',
+    nickname: 'Super',
+    idCard: '1200901234999',
+    birthDate: '1990-01-01',
+    age: calculateAge('1990-01-01'),
+    gender: 'male',
+    address: 'สำนักงานใหญ่',
+    province: 'กรุงเทพมหานคร',
+    electricityRegion: 'สำนักงานใหญ่ (กฟผ.)',
+    startDate: '2020-01-01',
+    employmentStatus: 'active'
+  },
+  {
     user_id: 'user-admin',
     employee_id: 'Okay0000',
     username: 'Okay0000',
@@ -256,9 +285,33 @@ export function getDbUsers(): UserProfile[] {
   const users = localStorage.getItem('okey_db_users');
   if (users) {
     try {
-      const parsed = JSON.parse(users);
+      let parsed = JSON.parse(users);
       let modified = false;
+
+      // Ensure Super Administrator is always present
+      const hasSuperAdmin = parsed.some((u: UserProfile) => u.username === 'Okay9999');
+      if (!hasSuperAdmin) {
+        const superadmin = INITIAL_USERS.find(iu => iu.username === 'Okay9999');
+        if (superadmin) {
+          parsed.unshift({
+            ...superadmin,
+            password: hashPassword(superadmin.password || 'Okay.co.ltd')
+          });
+          modified = true;
+        }
+      }
+
       const enriched = parsed.map((u: UserProfile) => {
+        if (u.username === 'Okay9999') {
+          if (u.role !== 'Administrator' || u.approval_level !== 'Administrator' || u.is_active !== true || u.employmentStatus !== 'active') {
+            u.role = 'Administrator';
+            u.approval_level = 'Administrator';
+            u.is_active = true;
+            u.employmentStatus = 'active';
+            modified = true;
+          }
+        }
+
         const match = INITIAL_USERS.find(iu => iu.user_id === u.user_id);
         if (match) {
           if (!u.phone) {
@@ -332,7 +385,32 @@ export function getDbUsers(): UserProfile[] {
 }
 
 export function saveDbUsers(users: UserProfile[]) {
-  localStorage.setItem('okey_db_users', JSON.stringify(users));
+  let finalUsers = [...users];
+  const hasSuperAdmin = finalUsers.some(u => u.username === 'Okay9999');
+  if (!hasSuperAdmin) {
+    const superadmin = INITIAL_USERS.find(iu => iu.username === 'Okay9999');
+    if (superadmin) {
+      finalUsers.unshift({
+        ...superadmin,
+        password: hashPassword(superadmin.password || 'Okay.co.ltd')
+      });
+    }
+  }
+
+  finalUsers = finalUsers.map(u => {
+    if (u.username === 'Okay9999') {
+      return {
+        ...u,
+        role: 'Administrator',
+        approval_level: 'Administrator',
+        is_active: true,
+        employmentStatus: 'active'
+      };
+    }
+    return u;
+  });
+
+  localStorage.setItem('okey_db_users', JSON.stringify(finalUsers));
 }
 
 export function getDbRules(): ApprovalRule[] {

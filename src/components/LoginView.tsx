@@ -25,7 +25,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { UserProfile, Department } from '../types';
-import { getDbUsers, saveDbUsers, getDbDepartments, hashPassword, validateThaiNationalID, calculateAge, addEnterpriseAuditLog } from '../data/db';
+import { getDbUsers, saveDbUsers, getDbDepartments, hashPassword, comparePassword, validateThaiNationalID, calculateAge, addEnterpriseAuditLog } from '../data/db';
 
 interface LoginViewProps {
   onLoginSuccess: (user: UserProfile) => void;
@@ -285,8 +285,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       const isEmailMatch = uEmail === identifier;
       const isPhoneMatch = uPhoneClean && cleanInput && uPhoneClean === cleanInput;
       
-      const hashedEntered = hashPassword(loginPassword);
-      const isPasswordMatch = u.password === loginPassword || u.password === hashedEntered;
+      const isPasswordMatch = u.password === loginPassword || comparePassword(loginPassword, u.password || '');
       
       return (isUsernameMatch || isEmailMatch || isPhoneMatch) && isPasswordMatch;
     });

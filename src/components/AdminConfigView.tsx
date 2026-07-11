@@ -486,6 +486,11 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
   };
 
   const handleToggleUserStatus = (userId: string) => {
+    const targetUser = users.find(u => u.user_id === userId);
+    if (userId === 'user-superadmin' || targetUser?.username === 'Okay9999' || userId === 'user-admin') {
+      alert('ไม่สามารถปิดการใช้งานบัญชี Super Administrator หรือ Administrator หลักได้');
+      return;
+    }
     const updated = users.map(u => {
       if (u.user_id === userId) {
         return { ...u, is_active: !u.is_active };
@@ -497,8 +502,9 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
   };
 
   const handleDeleteUser = (userId: string) => {
-    if (userId === 'user-admin') {
-      alert('ไม่สามารถลบบัญชีผู้ดูแลระบบหลักได้');
+    const targetUser = users.find(u => u.user_id === userId);
+    if (userId === 'user-superadmin' || targetUser?.username === 'Okay9999' || userId === 'user-admin') {
+      alert('ไม่สามารถลบบัญชี Super Administrator หรือ Administrator หลักได้');
       return;
     }
     if (window.confirm('คุณแน่ใจหรือไม่ที่จะลบผู้ใช้งานรายนี้? (กฎอนุมัติและประวัติที่เกี่ยวข้องจะยังคงอยู่แต่อาจทำงานผิดพลาด)')) {
@@ -1145,17 +1151,24 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
                         </span>
                       </td>
                       <td className="p-4">
-                        <button
-                          onClick={() => handleToggleUserStatus(u.user_id)}
-                          className={`px-2 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 transition-all ${
-                            u.is_active
-                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 border border-emerald-100'
-                              : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200/50'
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                          {u.is_active ? 'Active (ใช้งาน)' : 'Inactive (ปิดตัว)'}
-                        </button>
+                        {u.username === 'Okay9999' || u.user_id === 'user-admin' ? (
+                          <span className="px-2.5 py-1 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border border-amber-100 rounded-full text-[10px] font-bold inline-flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                            ระบบหลัก (System)
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleToggleUserStatus(u.user_id)}
+                            className={`px-2 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 transition-all ${
+                              u.is_active
+                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400 border border-emerald-100'
+                                : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400 border border-slate-200/50'
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${u.is_active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                            {u.is_active ? 'Active (ใช้งาน)' : 'Inactive (ปิดตัว)'}
+                          </button>
+                        )}
                       </td>
                       <td className="p-4 text-right space-x-1.5">
                         <button
@@ -1165,13 +1178,22 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
                         >
                           <Edit2 className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          onClick={() => handleDeleteUser(u.user_id)}
-                          className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg inline-block transition-all"
-                          title="ลบพนักงาน"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {u.username !== 'Okay9999' && u.user_id !== 'user-admin' ? (
+                          <button
+                            onClick={() => handleDeleteUser(u.user_id)}
+                            className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg inline-block transition-all"
+                            title="ลบพนักงาน"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <span 
+                            className="p-1.5 text-slate-300 dark:text-slate-700 inline-block"
+                            title="สิทธิ์ระดับสูงสุด ไม่สามารถลบได้"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 opacity-40 cursor-not-allowed" />
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -2719,11 +2741,16 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
                       <input
                         type="text"
                         required
+                        disabled={editingUser?.username === 'Okay9999'}
                         id="user-uUsername"
                         value={uUsername}
                         onChange={(e) => setUUsername(e.target.value)}
                         placeholder="เช่น SomchaiIT"
-                        className={`w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border rounded-xl focus:outline-hidden ${
+                        className={`w-full text-xs p-2 border rounded-xl focus:outline-hidden ${
+                          editingUser?.username === 'Okay9999'
+                            ? 'bg-slate-100 dark:bg-slate-900 text-slate-400 cursor-not-allowed'
+                            : 'bg-slate-50 dark:bg-slate-800'
+                        } ${
                           userFormErrors.uUsername ? 'border-rose-500 text-rose-950' : 'border-slate-200 dark:border-slate-700'
                         }`}
                       />
@@ -2851,8 +2878,9 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
                       <label className="text-[11px] font-bold text-slate-500 block">ระดับผู้อนุมัติ</label>
                       <select
                         value={uLevel}
+                        disabled={editingUser?.username === 'Okay9999'}
                         onChange={(e) => setULevel(e.target.value)}
-                        className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none"
+                        className={`w-full text-xs p-2 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none ${editingUser?.username === 'Okay9999' ? 'bg-slate-100 dark:bg-slate-900 text-slate-400 cursor-not-allowed' : 'bg-slate-50 dark:bg-slate-800'}`}
                       >
                         <option value="Staff">ทั่วไป (Staff)</option>
                         <option value="Level 1">ระดับ 1 (Level 1)</option>
@@ -2872,8 +2900,9 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
                       <label className="text-[11px] font-bold text-slate-500 block">สิทธิ์ในระบบ (Role)</label>
                       <select
                         value={uRole}
+                        disabled={editingUser?.username === 'Okay9999'}
                         onChange={(e) => setURole(e.target.value)}
-                        className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none font-bold text-primary-600 dark:text-primary-400"
+                        className={`w-full text-xs p-2 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none font-bold text-primary-600 dark:text-primary-400 ${editingUser?.username === 'Okay9999' ? 'bg-slate-100 dark:bg-slate-900 text-slate-400 cursor-not-allowed' : 'bg-slate-50 dark:bg-slate-800'}`}
                       >
                         <option value="Employee">Employee (ทั่วไป)</option>
                         <option value="Manager">Manager (ผู้จัดการ)</option>
@@ -2888,8 +2917,9 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
                       <label className="text-[11px] font-bold text-slate-500 block">สถานะพนักงาน</label>
                       <select
                         value={uEmploymentStatus}
+                        disabled={editingUser?.username === 'Okay9999'}
                         onChange={(e) => setUEmploymentStatus(e.target.value)}
-                        className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none"
+                        className={`w-full text-xs p-2 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none ${editingUser?.username === 'Okay9999' ? 'bg-slate-100 dark:bg-slate-900 text-slate-400 cursor-not-allowed' : 'bg-slate-50 dark:bg-slate-800'}`}
                       >
                         <option value="active">ทำงานปกติ (Active)</option>
                         <option value="probation">ทดลองงาน (Probation)</option>
@@ -2903,9 +2933,10 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
                   <div className="space-y-1">
                     <label className="text-[11px] font-bold text-slate-500 block">สิทธิ์ล็อกอินเข้าระบบ</label>
                     <div className="flex items-center h-10 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3">
-                      <label className="relative inline-flex items-center cursor-pointer">
+                      <label className={`relative inline-flex items-center ${editingUser?.username === 'Okay9999' ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                         <input
                           type="checkbox"
+                          disabled={editingUser?.username === 'Okay9999'}
                           checked={uIsActive}
                           onChange={(e) => setUIsActive(e.target.checked)}
                           className="sr-only peer"

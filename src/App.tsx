@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { 
   Bell, 
   Search, 
@@ -1408,6 +1409,7 @@ export default function App() {
         />
       )}
 
+      <Analytics />
     </div>
   );
 }

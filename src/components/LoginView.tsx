@@ -884,32 +884,34 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
             </form>
 
             {/* Quick Simulators switching block for testers */}
-            <div className="border-t border-slate-800/80 pt-5 space-y-3">
-              <div className="flex items-center gap-1.5 text-xs text-slate-400 font-bold">
-                <UserCheck size={14} className="text-amber-500" />
-                <span>ทางลัดสวมบทบาทสลับหน้าจอ (Quick Simulators):</span>
-              </div>
+            {!(import.meta as any).env?.PROD && (
+              <div className="border-t border-slate-800/80 pt-5 space-y-3">
+                <div className="flex items-center gap-1.5 text-xs text-slate-400 font-bold">
+                  <UserCheck size={14} className="text-amber-500" />
+                  <span>ทางลัดสวมบทบาทสลับหน้าจอ (Quick Simulators):</span>
+                </div>
 
-              <div className="grid grid-cols-1 gap-2 max-h-[180px] overflow-y-auto pr-1">
-                {users.slice(0, 4).map(u => (
-                  <button
-                    key={u.user_id}
-                    type="button"
-                    onClick={() => handleShortcutLogin(u)}
-                    className="p-2 bg-slate-950/40 hover:bg-slate-950/80 rounded-xl border border-slate-800 hover:border-slate-700 transition-all text-[11px] flex justify-between items-center group text-left"
-                  >
-                    <div>
-                      <span className="font-bold text-slate-300 block group-hover:text-white transition-colors">{u.name}</span>
-                      <span className="text-[9px] text-slate-500 dark:text-slate-400 font-semibold block">{u.position} • {u.department}</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[10px] font-mono text-primary-500 font-bold block">{u.phone}</span>
-                      <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">{u.approval_level || 'Staff'}</span>
-                    </div>
-                  </button>
-                ))}
+                <div className="grid grid-cols-1 gap-2 max-h-[180px] overflow-y-auto pr-1">
+                  {users.slice(0, 4).map(u => (
+                    <button
+                      key={u.user_id}
+                      type="button"
+                      onClick={() => handleShortcutLogin(u)}
+                      className="p-2 bg-slate-950/40 hover:bg-slate-950/80 rounded-xl border border-slate-800 hover:border-slate-700 transition-all text-[11px] flex justify-between items-center group text-left"
+                    >
+                      <div>
+                        <span className="font-bold text-slate-300 block group-hover:text-white transition-colors">{u.name}</span>
+                        <span className="text-[9px] text-slate-500 dark:text-slate-400 font-semibold block">{u.position} • {u.department}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] font-mono text-primary-500 font-bold block">{u.phone}</span>
+                        <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold uppercase">{u.approval_level || 'Staff'}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         ) : mode === 'register' ? (
           

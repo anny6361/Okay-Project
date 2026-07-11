@@ -939,7 +939,7 @@ export default function App() {
             )}
 
             {/* Simulated User Role Switcher Dropdown */}
-            {currentUser && (
+            {!(import.meta as any).env?.PROD && currentUser && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700">
                 <span className="hidden md:inline text-[10px] uppercase font-bold text-slate-400 pl-1">สิทธิ์ปัจจุบัน:</span>
                 <select

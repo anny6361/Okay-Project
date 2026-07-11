@@ -58,6 +58,63 @@ import {
 } from './data/db';
 const AdminConfigView = React.lazy(() => import('./components/AdminConfigView'));
 
+// --- GLOBAL REALTIME SYNC ENGINE ---
+const originalSetItem = localStorage.setItem;
+let isSyncingFromServer = false;
+
+// 1. Intercept ALL localStorage writes to sync them to the backend Firebase
+localStorage.setItem = function(key, value) {
+  const prevValue = localStorage.getItem(key);
+  originalSetItem.apply(this, arguments as any);
+  
+  if (!isSyncingFromServer && prevValue !== value && key.startsWith('okey_') && key !== 'okey_session_token' && key !== 'okey_simulated_user_id' && key !== 'okey_accent') {
+    try {
+      fetch('/api/sync', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ collection: key, data: JSON.parse(value) })
+      }).catch(err => console.error("Sync Error:", err));
+    } catch(e) {}
+  }
+};
+
+// 2. Fetch initial load from Firebase Database via API
+export async function loadDataFromServer() {
+  isSyncingFromServer = true;
+  try {
+     const res = await fetch('/api/sync');
+     const json = await res.json();
+     if (json.success && json.data) {
+        for (const [key, val] of Object.entries(json.data)) {
+           if (val) originalSetItem.call(localStorage, key, JSON.stringify(val));
+        }
+     }
+  } catch(e) {
+     console.error("Load Server Data Error:", e);
+  } finally {
+     isSyncingFromServer = false;
+  }
+}
+
+// 3. Listen to SSE for realtime multi-user updates
+export function setupRealtimeSSE() {
+  const evtSource = new EventSource('/api/events');
+  evtSource.onmessage = (event) => {
+    if (event.data === 'heartbeat') return;
+    try {
+      const parsed = JSON.parse(event.data);
+      if (parsed.collection && parsed.data) {
+         isSyncingFromServer = true;
+         originalSetItem.call(localStorage, parsed.collection, JSON.stringify(parsed.data));
+         isSyncingFromServer = false;
+         window.dispatchEvent(new Event('okey-sync')); // Trigger react re-renders
+      }
+    } catch (e) {}
+  };
+  return evtSource;
+}
+// ------------------------------------
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [requests, setRequests] = useState<ExpenseRequest[]>([]);
@@ -241,103 +298,116 @@ export default function App() {
 
   // Initialize & Auto Login Session Checking
   useEffect(() => {
-    // 1. Load users list, requests and budgets
-    const dbUsers = getDbUsers();
-    setUsersList(dbUsers);
+    const initializeApp = async () => {
+      // 0. Load data from backend Production Database
+      await loadDataFromServer();
+      const sse = setupRealtimeSSE();
 
-    const savedRequests = localStorage.getItem('okey_requests');
-    let loadedRequests: ExpenseRequest[] = [];
-    if (savedRequests) {
-      loadedRequests = JSON.parse(savedRequests);
-    }
-    setRequests(loadedRequests);
+      // Setup state reload function
+      const loadLocalState = () => {
+        // 1. Load users list, requests and budgets
+        const dbUsers = getDbUsers();
+        setUsersList(dbUsers);
 
-    const savedBudgets = localStorage.getItem('okey_budgets');
-    let loadedBudgets: DepartmentBudget[] = [];
-    if (savedBudgets) {
-      loadedBudgets = JSON.parse(savedBudgets);
-    }
+        const savedRequests = localStorage.getItem('okey_requests');
+        let loadedRequests: ExpenseRequest[] = [];
+        if (savedRequests) {
+          loadedRequests = JSON.parse(savedRequests);
+        }
+        setRequests(loadedRequests);
 
-    const depts = getDbDepartments();
-    const computedBudgets = loadedBudgets.map(b => {
-      let spent = 0;
-      let pending = 0;
-      loadedRequests.forEach(r => {
-        const rDept = r.department ? r.department.toLowerCase() : '';
-        const bDept = b.department ? b.department.toLowerCase() : '';
-        if (rDept === bDept || rDept.includes(bDept) || bDept.includes(rDept)) {
-          const statusLower = r.status ? r.status.toLowerCase() : '';
-          if (statusLower === 'approved' || statusLower === 'paid' || statusLower === 'cleared') {
-            spent += r.amount;
-          } else if (statusLower === 'pending') {
-            pending += r.amount;
+        const savedBudgets = localStorage.getItem('okey_budgets');
+        let loadedBudgets: DepartmentBudget[] = [];
+        if (savedBudgets) {
+          loadedBudgets = JSON.parse(savedBudgets);
+        }
+
+        const depts = getDbDepartments();
+        const computedBudgets = loadedBudgets.map(b => {
+          let spent = 0;
+          let pending = 0;
+          loadedRequests.forEach(r => {
+            const rDept = r.department ? r.department.toLowerCase() : '';
+            const bDept = b.department ? b.department.toLowerCase() : '';
+            if (rDept === bDept || rDept.includes(bDept) || bDept.includes(rDept)) {
+              const statusLower = r.status ? r.status.toLowerCase() : '';
+              if (statusLower === 'approved' || statusLower === 'paid' || statusLower === 'cleared') {
+                spent += r.amount;
+              } else if (statusLower === 'pending') {
+                pending += r.amount;
+              }
+            }
+          });
+          const matchedDept = depts.find(d => {
+            const dName = d.department_name ? d.department_name.toLowerCase() : '';
+            const bName = b.department ? b.department.toLowerCase() : '';
+            return dName === bName || dName.includes(bName) || bName.includes(dName);
+          });
+          const allocated = matchedDept ? matchedDept.budget : b.allocated;
+          return { ...b, allocated: allocated || 100000, spent, pending };
+        });
+        setBudgets(computedBudgets);
+
+        // 2. Authenticate Session / Auto Login
+        const token = localStorage.getItem('okey_session_token');
+        let authenticatedUser: UserProfile | null = null;
+
+        if (token) {
+          try {
+            // Safe decoding (obfuscated JSON base64 token storage)
+            const decrypted = JSON.parse(atob(token));
+            const now = Date.now();
+            
+            if (decrypted && decrypted.userId && decrypted.expiry > now) {
+              const matched = dbUsers.find(u => u.user_id === decrypted.userId);
+              if (matched && matched.is_active) {
+                authenticatedUser = matched;
+              }
+            }
+          } catch (err) {
+            console.error("Session verification failed", err);
+            localStorage.removeItem('okey_session_token');
           }
         }
-      });
-      const matchedDept = depts.find(d => {
-        const dName = d.department_name ? d.department_name.toLowerCase() : '';
-        const bName = b.department ? b.department.toLowerCase() : '';
-        return dName === bName || dName.includes(bName) || bName.includes(dName);
-      });
-      const allocated = matchedDept ? matchedDept.budget : b.allocated;
-      return { ...b, allocated: allocated || 100000, spent, pending };
-    });
-    setBudgets(computedBudgets);
 
-    // 2. Authenticate Session / Auto Login
-    const token = localStorage.getItem('okey_session_token');
-    let authenticatedUser: UserProfile | null = null;
-
-    if (token) {
-      try {
-        // Safe decoding (obfuscated JSON base64 token storage)
-        const decrypted = JSON.parse(atob(token));
-        const now = Date.now();
-        
-        if (decrypted && decrypted.userId && decrypted.expiry > now) {
-          const matched = dbUsers.find(u => u.user_id === decrypted.userId);
-          if (matched && matched.is_active) {
-            authenticatedUser = matched;
+        // Check fallback in sessionStorage if Remember Me was off but tab is active
+        if (!authenticatedUser) {
+          const sessionUserId = sessionStorage.getItem('okey_session_user_id');
+          if (sessionUserId) {
+            const matched = dbUsers.find(u => u.user_id === sessionUserId);
+            if (matched && matched.is_active) {
+              authenticatedUser = matched;
+            }
           }
         }
-      } catch (err) {
-        console.error("Session verification failed", err);
-        localStorage.removeItem('okey_session_token');
-      }
-    }
-
-    // Check fallback in sessionStorage if Remember Me was off but tab is active
-    if (!authenticatedUser) {
-      const sessionUserId = sessionStorage.getItem('okey_session_user_id');
-      if (sessionUserId) {
-        const matched = dbUsers.find(u => u.user_id === sessionUserId);
-        if (matched && matched.is_active) {
-          authenticatedUser = matched;
-        }
-      }
-    }
-
-    // 3. Splash Screen display (1.5 seconds)
-    const timer = setTimeout(() => {
-      if (authenticatedUser) {
-        setCurrentUser(authenticatedUser);
-        setActiveTab('dashboard');
         
-        // Log auto login event
-        addEnterpriseAuditLog(
-          authenticatedUser.user_id,
-          authenticatedUser.name,
-          authenticatedUser.approval_level || 'Employee',
-          'Auth_AutoLogin',
-          'ผู้ใช้งานเข้าสู่ระบบอัตโนมัติด้วย Session Token ที่ถูกต้อง'
-        );
-      } else {
-        setCurrentUser(null);
-      }
-      setIsSessionChecking(false);
-    }, 1500);
+        return authenticatedUser;
+      };
 
-    return () => clearTimeout(timer);
+      const authUser = loadLocalState();
+      
+      // Listen for SSE updates to refresh UI immediately across devices
+      const handleSync = () => loadLocalState();
+      window.addEventListener('okey-sync', handleSync);
+
+      // 3. Splash Screen display (1.5 seconds minimum for nice UX)
+      setTimeout(() => {
+        if (authUser) {
+          setCurrentUser(authUser);
+          setActiveTab('dashboard');
+        } else {
+          setCurrentUser(null);
+        }
+        setIsSessionChecking(false);
+      }, 1500);
+
+      return () => {
+        sse.close();
+        window.removeEventListener('okey-sync', handleSync);
+      };
+    };
+
+    initializeApp();
   }, []);
 
   // Save state to localStorage

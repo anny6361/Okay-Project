@@ -3,7 +3,9 @@
   "appId": "1:829883693592:web:091e39981b74ea8d93216d",
   "apiKey": "AIzaSyAOxJXRhskMaLeUeQOlIW5ZZjSBa9BKWg8",
   "authDomain": "oceanic-analyzer-ngtt6.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-okaycoltd-27ad1f5a-ea7d-42fa-a3aa-36232ce3b315",
   "storageBucket": "oceanic-analyzer-ngtt6.firebasestorage.app",
   "messagingSenderId": "829883693592",
-  "measurementId": ""
+  "measurementId": "",
+  "oAuthClientId": "829883693592-c0pttraq0ht0i2kcp87sov1pa313j1ci.apps.googleusercontent.com"
 }

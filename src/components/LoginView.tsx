@@ -28,13 +28,14 @@ import { UserProfile, Department } from '../types';
 import { getDbUsers, saveDbUsers, getDbDepartments, hashPassword, comparePassword, validateThaiNationalID, calculateAge, addEnterpriseAuditLog } from '../data/db';
 
 interface LoginViewProps {
-  onLoginSuccess: (user: UserProfile) => void;
+  onLoginSuccess: (user: UserProfile, rememberMe: boolean) => void;
 }
 
 type AuthMode = 'login' | 'register' | 'forgot';
 
 export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [mode, setMode] = useState<AuthMode>('login');
+  const [rememberMe, setRememberMe] = useState(true);
   
   // Database state
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -331,7 +332,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
     setSuccessMsg(`ยินดีต้อนรับกลับมา, คุณ${matchedUser.name}!`);
     setTimeout(() => {
-      onLoginSuccess(matchedUser);
+      onLoginSuccess(matchedUser, rememberMe);
     }, 1000);
   };
 
@@ -376,7 +377,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     const fullyUpdatedUser = updatedUsers.find(u => u.user_id === forceChangeUser.user_id)!;
     setTimeout(() => {
       setForceChangeUser(null);
-      onLoginSuccess(fullyUpdatedUser);
+      onLoginSuccess(fullyUpdatedUser, rememberMe);
     }, 1200);
   };
 
@@ -386,7 +387,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     setLoginPassword('password123'); // Default plain-text representation
     setSuccessMsg(`ยินดีต้อนรับกลับมา, คุณ${user.name}!`);
     setTimeout(() => {
-      onLoginSuccess(user);
+      onLoginSuccess(user, false);
     }, 1000);
   };
 
@@ -872,6 +873,25 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 {formErrors.loginPassword && (
                   <p className="text-rose-500 text-[11px] font-bold mt-1">⚠️ {formErrors.loginPassword}</p>
                 )}
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold px-0.5 pt-1">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-slate-800 bg-slate-950 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-950 cursor-pointer"
+                  />
+                  <span>จดจำการเข้าระบบ (Remember Me)</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setMode('forgot')}
+                  className="hover:text-emerald-400 transition-colors"
+                >
+                  ลืมรหัสผ่าน?
+                </button>
               </div>
 
               <button

@@ -70,6 +70,8 @@ export default function App() {
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   
+  const [isSessionChecking, setIsSessionChecking] = useState(true);
+  
   // Simulated Logged-In User States (Users Table simulation)
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -146,10 +148,14 @@ export default function App() {
     const dbUsers = getDbUsers();
     setUsersList(dbUsers);
     
-    // Set active simulated logged-in user
-    const savedUserId = localStorage.getItem('okey_simulated_user_id');
-    const matchedUser = dbUsers.find(u => u.user_id === savedUserId) || dbUsers.find(u => u.user_id === 'user-1') || dbUsers[0];
-    setCurrentUser(matchedUser);
+    // Auto-sync current user if they are logged in
+    const savedUserId = localStorage.getItem('okey_simulated_user_id') || sessionStorage.getItem('okey_session_user_id');
+    if (savedUserId) {
+      const matchedUser = dbUsers.find(u => u.user_id === savedUserId);
+      if (matchedUser && matchedUser.is_active) {
+        setCurrentUser(matchedUser);
+      }
+    }
 
     const savedRequests = localStorage.getItem('okey_requests');
     const savedBudgets = localStorage.getItem('okey_budgets');
@@ -233,9 +239,105 @@ export default function App() {
     localStorage.setItem('okey_budgets', JSON.stringify(computedBudgets));
   };
 
-  // Initialize
+  // Initialize & Auto Login Session Checking
   useEffect(() => {
-    loadDatabase();
+    // 1. Load users list, requests and budgets
+    const dbUsers = getDbUsers();
+    setUsersList(dbUsers);
+
+    const savedRequests = localStorage.getItem('okey_requests');
+    let loadedRequests: ExpenseRequest[] = [];
+    if (savedRequests) {
+      loadedRequests = JSON.parse(savedRequests);
+    }
+    setRequests(loadedRequests);
+
+    const savedBudgets = localStorage.getItem('okey_budgets');
+    let loadedBudgets: DepartmentBudget[] = [];
+    if (savedBudgets) {
+      loadedBudgets = JSON.parse(savedBudgets);
+    }
+
+    const depts = getDbDepartments();
+    const computedBudgets = loadedBudgets.map(b => {
+      let spent = 0;
+      let pending = 0;
+      loadedRequests.forEach(r => {
+        const rDept = r.department ? r.department.toLowerCase() : '';
+        const bDept = b.department ? b.department.toLowerCase() : '';
+        if (rDept === bDept || rDept.includes(bDept) || bDept.includes(rDept)) {
+          const statusLower = r.status ? r.status.toLowerCase() : '';
+          if (statusLower === 'approved' || statusLower === 'paid' || statusLower === 'cleared') {
+            spent += r.amount;
+          } else if (statusLower === 'pending') {
+            pending += r.amount;
+          }
+        }
+      });
+      const matchedDept = depts.find(d => {
+        const dName = d.department_name ? d.department_name.toLowerCase() : '';
+        const bName = b.department ? b.department.toLowerCase() : '';
+        return dName === bName || dName.includes(bName) || bName.includes(dName);
+      });
+      const allocated = matchedDept ? matchedDept.budget : b.allocated;
+      return { ...b, allocated: allocated || 100000, spent, pending };
+    });
+    setBudgets(computedBudgets);
+
+    // 2. Authenticate Session / Auto Login
+    const token = localStorage.getItem('okey_session_token');
+    let authenticatedUser: UserProfile | null = null;
+
+    if (token) {
+      try {
+        // Safe decoding (obfuscated JSON base64 token storage)
+        const decrypted = JSON.parse(atob(token));
+        const now = Date.now();
+        
+        if (decrypted && decrypted.userId && decrypted.expiry > now) {
+          const matched = dbUsers.find(u => u.user_id === decrypted.userId);
+          if (matched && matched.is_active) {
+            authenticatedUser = matched;
+          }
+        }
+      } catch (err) {
+        console.error("Session verification failed", err);
+        localStorage.removeItem('okey_session_token');
+      }
+    }
+
+    // Check fallback in sessionStorage if Remember Me was off but tab is active
+    if (!authenticatedUser) {
+      const sessionUserId = sessionStorage.getItem('okey_session_user_id');
+      if (sessionUserId) {
+        const matched = dbUsers.find(u => u.user_id === sessionUserId);
+        if (matched && matched.is_active) {
+          authenticatedUser = matched;
+        }
+      }
+    }
+
+    // 3. Splash Screen display (1.5 seconds)
+    const timer = setTimeout(() => {
+      if (authenticatedUser) {
+        setCurrentUser(authenticatedUser);
+        setActiveTab('dashboard');
+        
+        // Log auto login event
+        addEnterpriseAuditLog(
+          authenticatedUser.user_id,
+          authenticatedUser.name,
+          authenticatedUser.approval_level || 'Employee',
+          'Auth_AutoLogin',
+          'ผู้ใช้งานเข้าสู่ระบบอัตโนมัติด้วย Session Token ที่ถูกต้อง'
+        );
+      } else {
+        setCurrentUser(null);
+      }
+      setIsSessionChecking(false);
+    }, 1500);
+
+    return () => clearTimeout(timer);
   }, []);
 
   // Save state to localStorage
@@ -852,16 +954,78 @@ export default function App() {
 
   // Handle Logout
   const handleLogout = () => {
+    if (currentUser) {
+      addEnterpriseAuditLog(
+        currentUser.user_id,
+        currentUser.name,
+        currentUser.approval_level || 'Employee',
+        'Auth_Logout',
+        'ผู้ใช้งานลงชื่อออกจากระบบ ERP สำเร็จ'
+      );
+    }
     setCurrentUser(null);
     localStorage.removeItem('okey_simulated_user_id');
+    localStorage.removeItem('okey_session_token');
+    sessionStorage.removeItem('okey_session_user_id');
   };
+
+  if (isSessionChecking) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950 text-white font-sans">
+        <div className="flex flex-col items-center gap-6 max-w-sm text-center px-4">
+          {/* Logo O-Key ERP */}
+          <div className="relative">
+            <div className="w-20 h-20 bg-emerald-500 rounded-3xl flex items-center justify-center shadow-2xl shadow-emerald-500/20 rotate-12 hover:rotate-0 transition-transform duration-500">
+              <span className="text-4xl font-black text-slate-950 font-sans tracking-tighter">O-K</span>
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-yellow-400 rounded-full flex items-center justify-center border-2 border-slate-950">
+              <span className="text-[10px] font-black text-slate-950">★</span>
+            </div>
+          </div>
+          
+          <div className="space-y-2 mt-4">
+            <h1 className="text-2xl font-black tracking-tight text-slate-100">O-Key ERP Suite</h1>
+            <p className="text-xs font-mono text-emerald-400 font-bold tracking-wider uppercase">Enterprise Expense Management</p>
+          </div>
+
+          <div className="flex flex-col items-center gap-2 mt-4">
+            {/* Elegant Spinner */}
+            <div className="relative flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full border-2 border-emerald-500/20 border-t-emerald-400 animate-spin" />
+            </div>
+            <p className="text-xs font-bold text-slate-400 animate-pulse">กำลังตรวจสอบสิทธิ์...</p>
+          </div>
+
+          <div className="text-[10px] text-slate-600 font-mono mt-8">
+            © 2026 O-Key Co., Ltd. All Rights Reserved.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return (
       <LoginView 
-        onLoginSuccess={(u) => {
+        onLoginSuccess={(u, rememberMe) => {
           setCurrentUser(u);
-          localStorage.setItem('okey_simulated_user_id', u.user_id);
+          
+          if (rememberMe) {
+            // Secure Session Token Storage via Base64 obfuscation of expiry and identifier
+            const sessionData = {
+              userId: u.user_id,
+              expiry: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days duration
+              created: Date.now()
+            };
+            const token = btoa(JSON.stringify(sessionData));
+            localStorage.setItem('okey_session_token', token);
+            localStorage.setItem('okey_simulated_user_id', u.user_id);
+          } else {
+            sessionStorage.setItem('okey_session_user_id', u.user_id);
+            localStorage.removeItem('okey_session_token');
+            localStorage.removeItem('okey_simulated_user_id');
+          }
+          
           // Set to dashboard after login
           setActiveTab('dashboard');
         }} 

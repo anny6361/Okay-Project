@@ -206,6 +206,11 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
     if (onRefreshData) onRefreshData();
   };
 
+  useEffect(() => {
+    window.addEventListener('okey-sync', refreshState);
+    return () => window.removeEventListener('okey-sync', refreshState);
+  }, []);
+
   const handleSaveReplacementPolicy = (e: React.FormEvent) => {
     e.preventDefault();
     const updatedPolicy: ReplacementPolicy = {

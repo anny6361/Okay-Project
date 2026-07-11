@@ -151,6 +151,8 @@ export default function OnboardingView({ onRefreshData, currentUser, setCurrentU
 
   useEffect(() => {
     loadOnboardingData();
+    window.addEventListener('okey-sync', loadOnboardingData);
+    return () => window.removeEventListener('okey-sync', loadOnboardingData);
   }, []);
 
   // Set default start date and suggest next Username when in Creation Mode

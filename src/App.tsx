@@ -58,62 +58,11 @@ import {
 } from './data/db';
 const AdminConfigView = React.lazy(() => import('./components/AdminConfigView'));
 
-// --- GLOBAL REALTIME SYNC ENGINE ---
-const originalSetItem = localStorage.setItem;
-let isSyncingFromServer = false;
+import { setupClientFirestoreSync } from './lib/firebase-client';
 
-// 1. Intercept ALL localStorage writes to sync them to the backend Firebase
-localStorage.setItem = function(key, value) {
-  const prevValue = localStorage.getItem(key);
-  originalSetItem.apply(this, arguments as any);
-  
-  if (!isSyncingFromServer && prevValue !== value && key.startsWith('okey_') && key !== 'okey_session_token' && key !== 'okey_simulated_user_id' && key !== 'okey_accent') {
-    try {
-      fetch('/api/sync', {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ collection: key, data: JSON.parse(value) })
-      }).catch(err => console.error("Sync Error:", err));
-    } catch(e) {}
-  }
-};
 
-// 2. Fetch initial load from Firebase Database via API
-export async function loadDataFromServer() {
-  isSyncingFromServer = true;
-  try {
-     const res = await fetch('/api/sync');
-     const json = await res.json();
-     if (json.success && json.data) {
-        for (const [key, val] of Object.entries(json.data)) {
-           if (val) originalSetItem.call(localStorage, key, JSON.stringify(val));
-        }
-     }
-  } catch(e) {
-     console.error("Load Server Data Error:", e);
-  } finally {
-     isSyncingFromServer = false;
-  }
-}
 
-// 3. Listen to SSE for realtime multi-user updates
-export function setupRealtimeSSE() {
-  const evtSource = new EventSource('/api/events');
-  evtSource.onmessage = (event) => {
-    if (event.data === 'heartbeat') return;
-    try {
-      const parsed = JSON.parse(event.data);
-      if (parsed.collection && parsed.data) {
-         isSyncingFromServer = true;
-         originalSetItem.call(localStorage, parsed.collection, JSON.stringify(parsed.data));
-         isSyncingFromServer = false;
-         window.dispatchEvent(new Event('okey-sync')); // Trigger react re-renders
-      }
-    } catch (e) {}
-  };
-  return evtSource;
-}
-// ------------------------------------
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -299,9 +248,11 @@ export default function App() {
   // Initialize & Auto Login Session Checking
   useEffect(() => {
     const initializeApp = async () => {
-      // 0. Load data from backend Production Database
-      await loadDataFromServer();
-      const sse = setupRealtimeSSE();
+      // Setup direct real-time Firestore synchronization using the client-side Firebase SDK
+      const unsubscribeSync = setupClientFirestoreSync(() => {
+        loadLocalState();
+        window.dispatchEvent(new Event('okey-sync')); // Trigger react sub-views re-renders
+      });
 
       // Setup state reload function
       const loadLocalState = () => {
@@ -386,7 +337,7 @@ export default function App() {
 
       const authUser = loadLocalState();
       
-      // Listen for SSE updates to refresh UI immediately across devices
+      // Listen for okey-sync updates to refresh UI immediately
       const handleSync = () => loadLocalState();
       window.addEventListener('okey-sync', handleSync);
 
@@ -402,7 +353,7 @@ export default function App() {
       }, 1500);
 
       return () => {
-        sse.close();
+        unsubscribeSync();
         window.removeEventListener('okey-sync', handleSync);
       };
     };

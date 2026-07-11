@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <div id="content">Hello World</div>
+  <button id="btn">Download</button>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script>
+    document.getElementById('btn').addEventListener('click', () => {
+      html2pdf().from(document.getElementById('content')).save();
+    });
+  </script>
+</body>
+</html>

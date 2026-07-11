@@ -1,0 +1,8 @@
+--- src/components/MyRequestsView.tsx
++++ src/components/MyRequestsView.tsx
+@@ -1001,7 +1001,7 @@
+               
+               {/* Receipt OCR Area */}
+-              {supportingDocType !== 'replacement' ? (
++              {supportingDocType === 'receipt' && (
+                 <div className="p-5 bg-blue-50/40 dark:bg-blue-950/10 border border-blue-100 dark:border-blue-900/20 rounded-3xl space-y-4">

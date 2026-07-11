@@ -1,0 +1,6 @@
+{
+  "name": "OKAY Expense Management",
+  "description": "ระบบจัดการค่าใช้จ่ายระดับองค์กร (OKAY Expense Management) ที่รองรับการขออนุมัติ การจัดการงบประมาณ การวิเคราะห์ข้อมูล และการออกรายงานแบบครบวงจร",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

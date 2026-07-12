@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { CompanyLetterhead } from './CompanyLetterhead';
 import { 
   Users, 
   GitBranch, 
@@ -1570,28 +1571,18 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
               {/* Paper Preview */}
               <div className="bg-white text-slate-900 p-6 rounded-xl shadow-xs border border-slate-150 space-y-6 font-sans">
                 {/* Header */}
-                <div className="flex gap-3 pb-4 border-b border-slate-900">
-                  {logoUrl ? (
-                    <img src={logoUrl} className="h-10 w-10 rounded-lg object-cover bg-slate-50 border" alt="Logo" />
-                  ) : (
-                    <div className="h-10 w-10 rounded-lg bg-primary-100 text-primary-600 dark:text-primary-400 flex items-center justify-center font-bold text-xs">
-                      LOGO
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <h5 className="text-[11px] font-black uppercase text-slate-900 truncate">
-                      {companyName || 'ป้อนชื่อบริษัท'}
-                    </h5>
-                    <p className="text-[9px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-                      {address || 'ป้อนที่อยู่บริษัท'}
-                    </p>
-                    <div className="text-[8px] text-slate-500 dark:text-slate-400 flex flex-wrap gap-2 mt-1">
-                      <span><strong>TAX ID:</strong> {taxId || '-'}</span>
-                      <span><strong>TEL:</strong> {phone || '-'}</span>
-                      <span><strong>EMAIL:</strong> {email || '-'}</span>
-                    </div>
-                  </div>
-                </div>
+                <CompanyLetterhead 
+                  companyData={{
+                    companyName: companyName,
+                    logoUrl: logoUrl,
+                    address: address,
+                    taxId: taxId,
+                    phone: phone,
+                    email: email,
+                    bankInfo: bankInfo
+                  }}
+                  primaryColor="#1e3a8a"
+                />
 
                 {/* Sim Body */}
                 <div className="space-y-2">

@@ -28,6 +28,7 @@ import {
 import { ExpenseRequest, ExpenseCategory, UserProfile } from '../types';
 import { MOCK_RECEIPTS, CATEGORIES_CONFIG } from '../data/masterData';
 import { getDbDepartments, getDbCategories, saveDbCategories, getDbReplacementPolicy, getClearingStatusInfo, getDbRequests, getDbCompanyData } from '../data/db';
+import { getLetterheadHtml } from '../utils/letterheadHtml';
 
 
 interface MyRequestsViewProps {
@@ -1136,16 +1137,7 @@ export default function MyRequestsView({
                       </style>
                     </head>
                     <body onload="setTimeout(() => { window.print(); window.close(); }, 500)">
-                      <div class="header">
-                        <div class="header-left">
-                          <h1>${companyData.companyName || 'บริษัท โอเค เอ็กซ์เพนส์ จำกัด'}</h1>
-                          <p>${companyData.address || 'สำนักงานใหญ่ กรุงเทพมหานคร'}</p>
-                          <p style="font-size: 9px; color: #64748b;">เลขผู้เสียภาษี: ${companyData.taxId || '0105563000000'} | โทร: ${companyData.phone || '02-123-4567'}</p>
-                        </div>
-                        <div class="header-right">
-                          ${logoHtml}
-                        </div>
-                      </div>
+                      ${getLetterheadHtml(companyData, '#1e3a8a')}
 
                       <div class="report-title">
                         <h2>รายงานตรวจสอบข้อมูลคำขอเบิกเงินและประวัติตรวจสอบ (Audit & Claims History Report)</h2>

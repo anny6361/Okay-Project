@@ -42,13 +42,18 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
   const [province, setProvince] = useState(currentUser.province || 'กรุงเทพมหานคร');
   
   // Restricted Fields
-  const [employeeId, setEmployeeId] = useState(currentUser.user_id || '');
+  const [employeeId, setEmployeeId] = useState(currentUser.username || currentUser.employee_id || '');
   const [approvalLevel, setApprovalLevel] = useState(currentUser.approval_level || 'General Employee');
 
   // Password States
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Sync employeeId with username to ensure they are always the same
+  useEffect(() => {
+    setEmployeeId(username);
+  }, [username]);
 
   // Signature States
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -241,9 +246,11 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
             updated.force_password_change = false; // reset force flag if any
           }
 
-          // If the editor is admin, they can edit user_id and approval_level
+          // Ensure employee_id matches username
+          updated.employee_id = username.trim();
+
+          // If the editor is admin, they can edit approval_level
           if (isAdmin) {
-            updated.user_id = employeeId.trim();
             updated.approval_level = approvalLevel;
           }
 
@@ -515,22 +522,17 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
                 </select>
               </div>
 
-              {/* Employee ID (Disabled for non-admin) */}
+              {/* Employee ID (Derived from Username) */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 dark:text-slate-400 block flex items-center gap-1">
                   <span>รหัสพนักงาน (Employee ID)</span>
-                  {!isAdmin && <span className="text-[9px] text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded">(เฉพาะ Admin เท่านั้นที่แก้ไขได้)</span>}
+                  <span className="text-[9px] text-primary-600 bg-primary-50 dark:bg-primary-950/30 dark:text-primary-400 px-1.5 py-0.5 rounded font-medium">(ใช้ตามชื่อผู้ใช้งาน / Same as Username)</span>
                 </label>
                 <input
                   type="text"
-                  disabled={!isAdmin}
-                  value={employeeId}
-                  onChange={e => setEmployeeId(e.target.value)}
-                  className={`w-full px-3.5 py-2.5 text-xs rounded-xl border text-slate-900 dark:text-white font-mono ${
-                    !isAdmin 
-                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed border-slate-200 dark:border-slate-700' 
-                      : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 focus:outline-hidden focus:ring-1 focus:ring-primary-500'
-                  }`}
+                  disabled
+                  value={username}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 cursor-not-allowed border-slate-200 dark:border-slate-700 font-mono"
                 />
               </div>
 

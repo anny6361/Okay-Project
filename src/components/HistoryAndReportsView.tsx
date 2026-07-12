@@ -13,6 +13,7 @@ import {
 import { ExpenseRequest, ExpenseCategory, UserProfile } from '../types';
 import { CATEGORIES_CONFIG, DEPARTMENTS } from '../data/masterData';
 import { getClearingStatusInfo, getDbCompanyData } from '../data/db';
+import { CompanyLetterhead } from './CompanyLetterhead';
 
 interface HistoryAndReportsViewProps {
   requests: ExpenseRequest[];
@@ -464,16 +465,7 @@ export default function HistoryAndReportsView({ requests, onSelectRequest, curre
       {/* Corporate A4 Printable Audit Report */}
       <div id="corporate-report-printable-area" className="hidden print:block print-bg-white text-black p-6 font-sans">
         {/* Logo & Company Name */}
-        <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4 mb-6">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">{companyData?.companyName || 'บริษัท โอเค เอ็กซ์เพนส์ จำกัด'}</h1>
-            <p className="text-xs text-slate-600 mt-1">{companyData?.address || 'สำนักงานใหญ่ กรุงเทพมหานคร'}</p>
-            <p className="text-[10px] text-slate-500">เลขประจำตัวผู้เสียภาษี: {companyData?.taxId || '0105563000000'} | โทร: {companyData?.phone || '02-123-4567'}</p>
-          </div>
-          {companyData?.logoUrl && (
-            <img src={companyData.logoUrl} alt="Company Logo" className="h-12 object-contain" referrerPolicy="no-referrer" />
-          )}
-        </div>
+        <CompanyLetterhead companyData={companyData} primaryColor="#1e3a8a" />
 
         {/* Report Meta Info */}
         <div className="mb-6">

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -20,7 +20,8 @@ import {
   ShieldCheck,
   Database
 } from 'lucide-react';
-import { UserProfile } from '../types';
+import { UserProfile, CompanyMasterData } from '../types';
+import { getDbCompanyData } from '../data/db';
 
 interface SidebarProps {
   activeTab: string;
@@ -32,7 +33,12 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeTab, setActiveTab, pendingApprovalsCount, pendingPayoutsCount = 0, currentUser, onLogout }: SidebarProps) {
-  const [isOpen, setIsOpen] = React.useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [companyData, setCompanyData] = useState<CompanyMasterData | null>(null);
+
+  useEffect(() => {
+    setCompanyData(getDbCompanyData());
+  }, []);
 
   const isAdmin = currentUser?.approval_level === 'Administrator';
 
@@ -84,10 +90,14 @@ export default function Sidebar({ activeTab, setActiveTab, pendingApprovalsCount
       {/* Mobile Toggle */}
       <div className="lg:hidden flex items-center justify-between p-4 bg-slate-900 text-white border-b border-slate-800">
         <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-primary-600 rounded-lg text-white">
-            <Wallet className="h-5 w-5" />
-          </div>
-          <span className="font-bold text-lg tracking-tight">OKAY Expense</span>
+          {companyData?.logoUrl ? (
+            <img src={companyData.logoUrl} className="h-8 w-8 rounded-lg object-contain bg-white" alt="Logo" />
+          ) : (
+            <div className="p-1.5 bg-primary-600 rounded-lg text-white">
+              <Wallet className="h-5 w-5" />
+            </div>
+          )}
+          <span className="font-bold text-lg tracking-tight truncate max-w-[200px]">{companyData?.companyName || 'OKAY Expense'}</span>
         </div>
         <button 
           onClick={() => setIsOpen(!isOpen)}
@@ -114,12 +124,18 @@ export default function Sidebar({ activeTab, setActiveTab, pendingApprovalsCount
         <div className="flex flex-col py-6">
           {/* Logo */}
           <div className="px-6 mb-8 hidden lg:flex items-center gap-3">
-            <div className="p-2 bg-primary-600 rounded-xl text-white shadow-lg shadow-primary-900/30">
-              <Wallet className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="font-bold text-white text-lg tracking-tight font-['Times_New_Roman']">OKAY Expense</h1>
-              <p className="text-xs text-slate-400 font-medium">Enterprise Management</p>
+            {companyData?.logoUrl ? (
+              <img src={companyData.logoUrl} className="h-10 w-10 rounded-xl object-contain bg-white shadow-lg" alt="Logo" />
+            ) : (
+              <div className="p-2 bg-primary-600 rounded-xl text-white shadow-lg shadow-primary-900/30">
+                <Wallet className="h-6 w-6" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <h1 className="font-bold text-white text-[15px] tracking-tight font-['Sarabun'] truncate leading-tight">
+                {companyData?.companyName || 'OKAY Expense'}
+              </h1>
+              <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">Enterprise Management</p>
             </div>
           </div>
 

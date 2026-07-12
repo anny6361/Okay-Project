@@ -45,6 +45,8 @@ import {
   getDbRequests,
   getRealReceiptImages
 } from '../data/db';
+import { CompanyLetterhead } from './CompanyLetterhead';
+import { getLetterheadHtml } from '../utils/letterheadHtml';
 
 interface AccountingLedgerViewProps {
   currentUser: UserProfile;
@@ -590,22 +592,11 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
         <body>
           <div class="container">
             <!-- Header -->
-            <div class="header">
-              <div class="company-info">
-                <img src="${companyLogo}" class="company-logo" alt="logo" />
-                <div class="company-details">
-                  <h1>${companyName}</h1>
-                  <p>${companyAddress}</p>
-                  <p>เลขประจำตัวผู้เสียภาษี (Tax ID): ${companyTaxId} | โทร: ${companyPhone}</p>
-                  <p>อีเมล: ${companyEmail}</p>
-                </div>
-              </div>
-              <div class="doc-meta">
-                <span class="doc-badge">Official Copy</span>
-                <div class="doc-meta-item">เลขที่เอกสาร / Doc No: <br/><span>${doc.doc_id}</span></div>
-                <div class="doc-meta-item">วันที่ / Date: <br/><span>${doc.date}</span></div>
-              </div>
-            </div>
+            ${getLetterheadHtml(companyData, '#1e3a8a', `
+              <span class="doc-badge" style="background-color: #3b82f6; color: white; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; text-transform: uppercase;">Official Copy</span>
+              <div style="margin-top: 5px; font-size: 10px; font-weight: bold; font-family: monospace;">เลขที่เอกสาร / Doc No: <br/><span style="color: #1e3a8a;">${doc.doc_id}</span></div>
+              <div style="margin-top: 3px; font-size: 9px; color: #475569;">วันที่ / Date: <br/><span>${doc.date}</span></div>
+            `)}
 
             <!-- Document Title -->
             <div class="doc-title-container">
@@ -1227,8 +1218,8 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
       {/* VIEW CONTENTS */}
 
       {activeSubTab === 'clearing' && (
-        <div className="space-y-6">
-          <div className="flex justify-end gap-2 no-print">
+        <div className="space-y-6 print:space-y-4 print:p-0">
+          <div className="flex justify-end gap-2 print:hidden no-print">
             <button
               onClick={handlePrintTable}
               className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-sm"
@@ -1252,16 +1243,29 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
             </button>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="hidden print:block mb-6">
+            <CompanyLetterhead 
+              companyData={companyData} 
+              primaryColor="#1e3a8a" 
+              rightContent={
+                <div className="text-right shrink-0">
+                  <h2 className="text-sm font-bold text-slate-900">Clearing & Refunds Sheet</h2>
+                  <p className="text-[10px] text-slate-500 font-mono mt-0.5">Print Date: {new Date().toLocaleDateString('th-TH')}</p>
+                </div>
+              }
+            />
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 print:grid-cols-2 print:gap-4">
           
           {/* Refunds Panel (Unused Advance - Spent < Advance) */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 shadow-sm space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 shadow-sm space-y-4 print:border-none print:shadow-none print:p-0">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 print:border-slate-300">
               <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <TrendingDown className="h-4.5 w-4.5 text-amber-500" />
-                <span>รายการคืนเงินบริษัท (Employee Refunds & Deductions)</span>
+                <TrendingDown className="h-4.5 w-4.5 text-amber-500 print:hidden" />
+                <span className="print:text-black">รายการคืนเงินบริษัท (Employee Refunds & Deductions)</span>
               </h2>
-              <span className="text-[10px] bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400 px-2 py-0.5 rounded font-extrabold uppercase">
+              <span className="text-[10px] bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400 px-2 py-0.5 rounded font-extrabold uppercase print:bg-white print:text-black print:border print:border-slate-300">
                 Spent &lt; Advance
               </span>
             </div>
@@ -1273,16 +1277,16 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
             ) : (
               <div className="space-y-3">
                 {refunds.map(ref => (
-                  <div key={ref.refund_id} className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200/40 dark:border-slate-800 flex flex-col justify-between gap-3">
+                  <div key={ref.refund_id} className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200/40 dark:border-slate-800 flex flex-col justify-between gap-3 print:bg-white print:border-slate-300 print:p-2">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="font-mono text-[10px] text-slate-400 font-bold">{ref.refund_id}</span>
-                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200">เหลือจ่ายจากคำขอเคลียร์เงินทดรอง (ยืมเกินใช้จริง)</p>
-                        <p className="text-[10px] text-slate-400">รหัสยืมอ้างอิง: <span className="font-mono">{ref.advance_id}</span></p>
-                        <p className="text-[10px] text-slate-400">วันที่สร้าง: {ref.date}</p>
+                        <span className="font-mono text-[10px] text-slate-400 font-bold print:text-black">{ref.refund_id}</span>
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 print:text-black">เหลือจ่ายจากคำขอเคลียร์เงินทดรอง (ยืมเกินใช้จริง)</p>
+                        <p className="text-[10px] text-slate-400 print:text-slate-600">รหัสยืมอ้างอิง: <span className="font-mono">{ref.advance_id}</span></p>
+                        <p className="text-[10px] text-slate-400 print:text-slate-600">วันที่สร้าง: {ref.date}</p>
                       </div>
                       <div className="text-right">
-                        <span className="text-sm font-mono font-extrabold text-amber-600 dark:text-amber-500 block">
+                        <span className="text-sm font-mono font-extrabold text-amber-600 dark:text-amber-500 block print:text-black">
                           ฿{ref.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                         </span>
                         <div className="mt-1">
@@ -1328,13 +1332,13 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
           </div>
 
           {/* Additional Reimbursements Panel (Spent > Advance) */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 shadow-sm space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 shadow-sm space-y-4 print:border-none print:shadow-none print:p-0">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 print:border-slate-300">
               <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <TrendingUp className="h-4.5 w-4.5 text-primary-500" />
-                <span>รายการบริษัทจ่ายเพิ่ม (Additional Reimbursements)</span>
+                <TrendingUp className="h-4.5 w-4.5 text-primary-500 print:hidden" />
+                <span className="print:text-black">รายการบริษัทจ่ายเพิ่ม (Additional Reimbursements)</span>
               </h2>
-              <span className="text-[10px] bg-primary-50 text-primary-700 dark:bg-primary-950/20 dark:text-primary-400 px-2 py-0.5 rounded font-extrabold uppercase">
+              <span className="text-[10px] bg-primary-50 text-primary-700 dark:bg-primary-950/20 dark:text-primary-400 px-2 py-0.5 rounded font-extrabold uppercase print:bg-white print:text-black print:border print:border-slate-300">
                 Spent &gt; Advance
               </span>
             </div>
@@ -1347,16 +1351,16 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
               <div className="space-y-3">
                 {/* Render Reimbursement Vouchers */}
                 {accountingDocs.filter(d => d.doc_type === 'reimbursement_voucher').map(doc => (
-                  <div key={doc.doc_id} className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200/40 dark:border-slate-800 flex flex-col justify-between gap-3">
+                  <div key={doc.doc_id} className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200/40 dark:border-slate-800 flex flex-col justify-between gap-3 print:bg-white print:border-slate-300 print:p-2">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="font-mono text-[10px] text-slate-400 font-bold">{doc.doc_id}</span>
-                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200">จ่ายคืนพนักงาน: {doc.requester_name}</p>
-                        <p className="text-[10px] text-slate-400">ประเภท: ใบสำคัญชดใช้ส่วนต่าง</p>
-                        <p className="text-[10px] text-slate-400">วันที่อนุมัติ: {doc.date}</p>
+                        <span className="font-mono text-[10px] text-slate-400 font-bold print:text-black">{doc.doc_id}</span>
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 print:text-black">จ่ายคืนพนักงาน: {doc.requester_name}</p>
+                        <p className="text-[10px] text-slate-400 print:text-slate-600">ประเภท: ใบสำคัญชดใช้ส่วนต่าง</p>
+                        <p className="text-[10px] text-slate-400 print:text-slate-600">วันที่อนุมัติ: {doc.date}</p>
                       </div>
                       <div className="text-right">
-                        <span className="text-sm font-mono font-extrabold text-primary-600 dark:text-primary-400 block">
+                        <span className="text-sm font-mono font-extrabold text-primary-600 dark:text-primary-400 block print:text-black">
                           ฿{doc.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                         </span>
                         <div className="mt-1">
@@ -1371,19 +1375,19 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
 
                 {/* Keep legacy deductions display if any exist in the database for backward compatibility */}
                 {deductions.map(ded => (
-                  <div key={ded.deduction_id} className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200/40 dark:border-slate-800 flex flex-col justify-between gap-3">
+                  <div key={ded.deduction_id} className="p-4 bg-slate-50 dark:bg-slate-800/30 rounded-xl border border-slate-200/40 dark:border-slate-800 flex flex-col justify-between gap-3 print:bg-white print:border-slate-300 print:p-2">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="font-mono text-[10px] text-slate-400 font-bold">{ded.deduction_id}</span>
-                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200">หักเงินส่วนเกินพนักงาน: {getUserNameById(ded.user_id)}</p>
-                        <p className="text-[10px] text-slate-400">รหัสสะสมเดิม (Legacy Adjustment Record)</p>
+                        <span className="font-mono text-[10px] text-slate-400 font-bold print:text-black">{ded.deduction_id}</span>
+                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 print:text-black">หักเงินส่วนเกินพนักงาน: {getUserNameById(ded.user_id)}</p>
+                        <p className="text-[10px] text-slate-400 print:text-slate-600">รหัสสะสมเดิม (Legacy Adjustment Record)</p>
                       </div>
                       <div className="text-right">
-                        <span className="text-sm font-mono font-extrabold text-rose-600 dark:text-rose-400 block">
+                        <span className="text-sm font-mono font-extrabold text-rose-600 dark:text-rose-400 block print:text-black">
                           ฿{ded.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                         </span>
                         <div className="mt-1">
-                          <span className="inline-block text-[9px] bg-rose-50 text-rose-850 dark:bg-rose-950/30 dark:text-rose-400 px-1.5 py-0.5 rounded font-bold ring-1 ring-rose-200">
+                          <span className="inline-block text-[9px] bg-rose-50 text-rose-850 dark:bg-rose-950/30 dark:text-rose-400 px-1.5 py-0.5 rounded font-bold ring-1 ring-rose-200 print:bg-white print:border print:border-slate-300 print:text-black print:ring-0">
                             🔴 Legacy Deduction Record
                           </span>
                         </div>
@@ -1403,16 +1407,17 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
         <div className="space-y-4 print:space-y-0 print:p-0">
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 shadow-sm print:border-none print:shadow-none print:p-0">
             {/* Corporate Header for full list print */}
-            <div className="hidden print:flex justify-between items-center mb-8 border-b-2 border-slate-900 pb-4">
-              <div>
-                <h1 className="text-xl font-black uppercase">{companyData?.companyName || 'O-KEY EXPENSE MANAGEMENT CO., LTD.'}</h1>
-                <p className="text-[10px] text-slate-500 font-medium">{companyData?.address || '99/9 Rama IX Road, Huai Khwang, Bangkok 10310'}</p>
-                <p className="text-[10px] text-slate-500 font-medium">Tax ID: {companyData?.taxId || '0-1055-66000-11-2'}</p>
-              </div>
-              <div className="text-right">
-                <h2 className="text-lg font-bold">Accounting Vouchers Sheet</h2>
-                <p className="text-xs font-mono">Print Date: {new Date().toLocaleDateString('th-TH')}</p>
-              </div>
+            <div className="hidden print:block mb-8">
+              <CompanyLetterhead 
+                companyData={companyData} 
+                primaryColor="#1e3a8a" 
+                rightContent={
+                  <div className="text-right shrink-0">
+                    <h2 className="text-sm font-bold text-slate-900">Accounting Vouchers Sheet</h2>
+                    <p className="text-[10px] text-slate-500 font-mono mt-0.5">Print Date: {new Date().toLocaleDateString('th-TH')}</p>
+                  </div>
+                }
+              />
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-2 border-b border-slate-100 dark:border-slate-800 print:border-b-0 print:mb-2">
@@ -1482,7 +1487,37 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
                       );
                     })}
                   </tbody>
+                  <tfoot className="bg-slate-50 dark:bg-slate-900 border-t-2 border-slate-200 dark:border-slate-800 print:bg-white print:border-black font-bold">
+                    <tr>
+                      <td colSpan={4} className="p-3 text-right text-slate-700 dark:text-slate-300 print:text-black uppercase tracking-wider text-[11px]">
+                        ยอดรวมทั้งสิ้น (Grand Total)
+                      </td>
+                      <td className="p-3 text-right font-mono text-slate-900 dark:text-white print:text-black text-[13px]">
+                        ฿{accountingDocs.reduce((sum, doc) => sum + (doc.amount || 0), 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="print:hidden"></td>
+                    </tr>
+                  </tfoot>
                 </table>
+
+                {/* Print Signatures */}
+                <div className="hidden print:grid grid-cols-3 gap-8 mt-16 pt-8 text-center" style={{ pageBreakInside: 'avoid' }}>
+                  <div>
+                    <div className="h-12 border-b border-dashed border-slate-400 mb-2 w-3/4 mx-auto"></div>
+                    <p className="font-bold text-xs text-black">ผู้จัดทำ (Prepared By)</p>
+                    <p className="text-[10px] text-slate-500 mt-1">วันที่ (Date): ____/____/______</p>
+                  </div>
+                  <div>
+                    <div className="h-12 border-b border-dashed border-slate-400 mb-2 w-3/4 mx-auto"></div>
+                    <p className="font-bold text-xs text-black">ผู้ตรวจสอบ (Checked By)</p>
+                    <p className="text-[10px] text-slate-500 mt-1">วันที่ (Date): ____/____/______</p>
+                  </div>
+                  <div>
+                    <div className="h-12 border-b border-dashed border-slate-400 mb-2 w-3/4 mx-auto"></div>
+                    <p className="font-bold text-xs text-black">ผู้อนุมัติ (Approved By)</p>
+                    <p className="text-[10px] text-slate-500 mt-1">วันที่ (Date): ____/____/______</p>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -1491,8 +1526,8 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
 
       {/* DOUBLE-ENTRY JOURNAL LEDGER */}
       {activeSubTab === 'journal' && (
-        <div className="space-y-4">
-          <div className="flex justify-end no-print">
+        <div className="space-y-4 print:space-y-0 print:p-0">
+          <div className="flex justify-end print:hidden">
             <button
               onClick={handlePrintTable}
               className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-sm"
@@ -1501,17 +1536,31 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
               <span>พิมพ์ตารางนี้ (Print Sheet)</span>
             </button>
           </div>
-          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 shadow-sm print:border-none print:shadow-none print:p-0">
+            {/* Corporate Header for full list print */}
+            <div className="hidden print:block mb-8">
+              <CompanyLetterhead 
+                companyData={companyData} 
+                primaryColor="#1e3a8a" 
+                rightContent={
+                  <div className="text-right shrink-0">
+                    <h2 className="text-sm font-bold text-slate-900">General Journal Ledger</h2>
+                    <p className="text-[10px] text-slate-500 font-mono mt-0.5">Print Date: {new Date().toLocaleDateString('th-TH')}</p>
+                  </div>
+                }
+              />
+            </div>
+
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800 print:border-b-0 print:mb-2">
               <div>
                 <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <FileText className="h-4.5 w-4.5 text-indigo-500" />
-                  <span>สมุดรายวันทั่วไปเบิกจ่ายสองขา (General Journal Double-Entry Book)</span>
+                  <FileText className="h-4.5 w-4.5 text-indigo-500 print:hidden" />
+                  <span className="print:text-black print:text-lg">สมุดรายวันทั่วไปเบิกจ่ายสองขา (General Journal Double-Entry Book)</span>
                 </h2>
-                <p className="text-[11px] text-slate-400 mt-0.5">ระบบหักกลบเดบิต/เครดิต แบบคู่ขนานตามงวดเงินสดสะสม</p>
+                <p className="text-[11px] text-slate-400 mt-0.5 print:hidden">ระบบหักกลบเดบิต/เครดิต แบบคู่ขนานตามงวดเงินสดสะสม</p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 print:hidden">
                 <div className="flex items-center gap-2 text-[11px] font-bold bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-200/40">
                   <ShieldCheck className="h-4 w-4 text-emerald-500" />
                   <span className="text-slate-600 dark:text-slate-300">สมดุลคู่บัญชี (Balanced Status): </span>
@@ -1547,8 +1596,8 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
               </div>
             ) : (
               <div className="overflow-x-auto print:overflow-visible">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-bold border-b border-slate-100 dark:border-slate-800">
+                <table className="w-full text-xs text-left print:text-black">
+                  <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 font-bold border-b border-slate-100 dark:border-slate-800 print:bg-white print:text-black print:border-black">
                     <tr>
                       <th className="p-3">ID บันทึก</th>
                       <th className="p-3">วันที่</th>
@@ -1557,34 +1606,34 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
                       <th className="p-3 text-right">เครดิต (Credit)</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50 print:divide-slate-200">
                     {journalEntries.map(entry => (
                       <React.Fragment key={entry.journal_id}>
                         {/* Debit Row */}
-                        <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
-                          <td className="p-3 font-mono font-semibold text-slate-400" rowSpan={3}>{entry.journal_id}</td>
-                          <td className="p-3 text-slate-500 dark:text-slate-400" rowSpan={3}>{entry.date}</td>
-                          <td className="p-3 font-semibold text-slate-800 dark:text-slate-200">
+                        <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 print:bg-white">
+                          <td className="p-3 font-mono font-semibold text-slate-400 print:text-black" rowSpan={3}>{entry.journal_id}</td>
+                          <td className="p-3 text-slate-500 dark:text-slate-400 print:text-black" rowSpan={3}>{entry.date}</td>
+                          <td className="p-3 font-semibold text-slate-800 dark:text-slate-200 print:text-black">
                             Dr. {entry.debit_account}
                           </td>
-                          <td className="p-3 text-right font-mono font-bold text-primary-600 dark:text-primary-400">
+                          <td className="p-3 text-right font-mono font-bold text-primary-600 dark:text-primary-400 print:text-black">
                             ฿{(entry.amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                           </td>
-                          <td className="p-3 text-right text-slate-300 font-mono">-</td>
+                          <td className="p-3 text-right text-slate-300 font-mono print:text-black">-</td>
                         </tr>
                         {/* Credit Row */}
-                        <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
-                          <td className="p-3 pl-8 text-slate-600 dark:text-slate-300">
+                        <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 print:bg-white">
+                          <td className="p-3 pl-8 text-slate-600 dark:text-slate-300 print:text-black">
                             Cr. {entry.credit_account}
                           </td>
-                          <td className="p-3 text-right text-slate-300 font-mono">-</td>
-                          <td className="p-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                          <td className="p-3 text-right text-slate-300 font-mono print:text-black">-</td>
+                          <td className="p-3 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400 print:text-black">
                             ฿{(entry.amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                           </td>
                         </tr>
                         {/* Narrative Row */}
-                        <tr className="bg-slate-50/10 dark:bg-slate-800/5 border-b border-slate-100 dark:border-slate-800">
-                          <td className="p-2 pl-8 text-[11px] text-slate-450 dark:text-slate-400 italic">
+                        <tr className="bg-slate-50/10 dark:bg-slate-800/5 border-b border-slate-100 dark:border-slate-800 print:bg-white print:border-slate-300">
+                          <td className="p-2 pl-8 text-[11px] text-slate-450 dark:text-slate-400 italic print:text-black">
                             ({entry.description}) - Ref: {entry.ref_id}
                           </td>
                           <td className="p-2"></td>
@@ -1593,7 +1642,34 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
                       </React.Fragment>
                     ))}
                   </tbody>
+                  <tfoot className="bg-slate-50 dark:bg-slate-900 border-t-2 border-slate-200 dark:border-slate-800 print:bg-white print:border-black font-bold">
+                    <tr>
+                      <td colSpan={3} className="p-3 text-right text-slate-700 dark:text-slate-300 print:text-black uppercase tracking-wider text-[11px]">
+                        ยอดรวมทั้งสิ้น (Grand Total)
+                      </td>
+                      <td className="p-3 text-right font-mono text-slate-900 dark:text-white print:text-black text-[13px]">
+                        ฿{journalEntries.reduce((sum, entry) => sum + (entry.amount || 0), 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="p-3 text-right font-mono text-slate-900 dark:text-white print:text-black text-[13px]">
+                        ฿{journalEntries.reduce((sum, entry) => sum + (entry.amount || 0), 0).toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
+
+                {/* Print Signatures */}
+                <div className="hidden print:grid grid-cols-2 gap-8 mt-16 pt-8 text-center" style={{ pageBreakInside: 'avoid' }}>
+                  <div>
+                    <div className="h-12 border-b border-dashed border-slate-400 mb-2 w-3/4 mx-auto"></div>
+                    <p className="font-bold text-xs text-black">ผู้บันทึกบัญชี (Bookkeeper)</p>
+                    <p className="text-[10px] text-slate-500 mt-1">วันที่ (Date): ____/____/______</p>
+                  </div>
+                  <div>
+                    <div className="h-12 border-b border-dashed border-slate-400 mb-2 w-3/4 mx-auto"></div>
+                    <p className="font-bold text-xs text-black">สมุห์บัญชี / ผู้จัดการ (Accounting Manager)</p>
+                    <p className="text-[10px] text-slate-500 mt-1">วันที่ (Date): ____/____/______</p>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -1642,36 +1718,19 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
               </button>
 
               {/* Print Header */}
-              <div className="border-b-4 border-slate-900 pb-4 flex justify-between items-start">
-                <div className="flex gap-4 items-start">
-                  <img 
-                    src={companyData?.logoUrl || "/src/assets/images/corporate_logo_minimalist_1783570910802.jpg"} 
-                    className="h-12 w-12 rounded-lg object-cover border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 shrink-0" 
-                    alt="company logo" 
-                    referrerPolicy="no-referrer"
-                  />
-                  <div>
-                    <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white">
-                      {companyData?.companyName || 'O-KEY EXPENSE MANAGEMENT CO., LTD.'}
-                    </h3>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                      {companyData?.address || '99/9 Rama IX Road, Huai Khwang, Bangkok 10310'}
-                    </p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                      เลขประจำตัวผู้เสียภาษี (Tax ID): {companyData?.taxId || '0-1055-66000-11-2'}
-                      {companyData?.phone && ` | เบอร์โทร: ${companyData.phone}`}
-                      {companyData?.email && ` | อีเมล: ${companyData.email}`}
-                    </p>
+              <CompanyLetterhead 
+                companyData={companyData} 
+                primaryColor="#1e3a8a" 
+                rightContent={
+                  <div className="text-right shrink-0">
+                    <span className="px-3 py-1 bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider rounded">
+                      Official Copy
+                    </span>
+                    <p className="text-[11px] font-mono font-bold mt-2 text-slate-900 dark:text-white">NO: {selectedDoc.doc_id}</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Date: {selectedDoc.date}</p>
                   </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <span className="px-3 py-1 bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider rounded">
-                    Official Copy
-                  </span>
-                  <p className="text-[11px] font-mono font-bold mt-2 text-slate-900 dark:text-white">NO: {selectedDoc.doc_id}</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Date: {selectedDoc.date}</p>
-                </div>
-              </div>
+                }
+              />
 
               {/* Title Document */}
               <div className="text-center py-2 bg-slate-100 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">

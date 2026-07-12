@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { ExpenseRequest, UserProfile } from '../types';
 import { getDbUsers, getDbCompanyData, getRealReceiptImages, getDbRefunds } from '../data/db';
+import { CompanyLetterhead } from './CompanyLetterhead';
+import { getLetterheadHtml } from '../utils/letterheadHtml';
 
 export default function DocumentPdfManagerView() {
   const [activeTab, setActiveTab] = useState<'architecture' | 'engine'>('engine');
@@ -392,25 +394,13 @@ export default function DocumentPdfManagerView() {
           </head>
           <body onload="window.print(); window.close();">
             <div class="container">
-              <div class="header">
-                <div class="logo-title">
-                  <img src="${companyLogo}" class="logo-img" alt="Company Logo" />
-                  <div class="company-info" style="margin-left: 12px;">
-                    <h2 style="margin: 0; font-size: 18px;">${companyName}</h2>
-                    <p style="margin: 2px 0 0 0; font-size: 11px; color: #64748b;">
-                      ${companyAddress}<br/>
-                      เลขผู้เสียภาษี: ${companyTaxId} | โทร: ${companyPhone} | อีเมล: ${companyEmail}
-                    </p>
-                  </div>
-                </div>
-                <div class="doc-meta" style="text-align: right;">
-                  <h1 style="margin: 0; font-size: 20px; color: #f59e0b;">ใบแทนใบเสร็จรับเงิน</h1>
-                  <p style="margin: 4px 0 0 0; font-size: 12px; font-family: monospace; font-weight: bold;">เลขที่เอกสาร: ${selectedRequest.replacement_receipt_number || selectedRequest.id}</p>
-                  <p style="font-size: 11px; color: #64748b; margin: 2px 0 0 0;">วันที่พิมพ์เอกสาร: ${new Date().toLocaleDateString('th-TH')}</p>
-                  <p style="font-size: 11px; color: #64748b; margin: 2px 0 0 0;">เวลา: ${new Date().toLocaleTimeString('th-TH')}</p>
-                  <p style="font-size: 10px; color: #94a3b8; margin: 2px 0 0 0; font-family: monospace;">Version: 1.0 (Audit Trail Active)</p>
-                </div>
-              </div>
+              ${getLetterheadHtml(companyData, '#1e3a8a', `
+                <h1 style="margin: 0; font-size: 16px; color: #1e3a8a; font-weight: bold; font-family: 'Sarabun', sans-serif;">ใบแทนใบเสร็จรับเงิน</h1>
+                <p style="margin: 4px 0 0 0; font-size: 10px; font-family: monospace; font-weight: bold;">เลขที่เอกสาร: ${selectedRequest.replacement_receipt_number || selectedRequest.id}</p>
+                <p style="font-size: 9px; color: #64748b; margin: 2px 0 0 0; font-family: 'Sarabun', sans-serif;">วันที่พิมพ์เอกสาร: ${new Date().toLocaleDateString('th-TH')}</p>
+                <p style="font-size: 9px; color: #64748b; margin: 2px 0 0 0; font-family: 'Sarabun', sans-serif;">เวลา: ${new Date().toLocaleTimeString('th-TH')}</p>
+                <p style="font-size: 8px; color: #94a3b8; margin: 2px 0 0 0; font-family: monospace;">Version: 1.0 (Audit Trail Active)</p>
+              `)}
 
               <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding: 10px; background-color: #f8fafc; border-radius: 8px; border: 1px dashed #cbd5e1;">
                 <div>
@@ -752,32 +742,15 @@ export default function DocumentPdfManagerView() {
           <div class="a4-page">
             
             <!-- HEADER -->
-            <table class="header-table">
-              <tr>
-                <td style="width: 70px; vertical-align: top;">
-                  <img src="${companyLogo}" class="logo-img" alt="Company Logo" />
-                </td>
-                <td style="vertical-align: top; padding-left: 10px;">
-                  <h3 style="margin: 0 0 4px 0; font-size: 14px; font-weight: 800; letter-spacing: -0.5px; color: #1e3a8a;">
-                    ${companyName}
-                  </h3>
-                  <p style="margin: 0; font-size: 9px; color: #64748b; line-height: 1.4;">
-                    ${companyAddress}<br />
-                    เลขประจำตัวผู้เสียภาษี (Tax ID): ${companyTaxId} | ERP Document Engine
-                    | โทร: ${companyPhone} | อีเมล: ${companyEmail}
-                  </p>
-                </td>
-                <td style="text-align: right; vertical-align: top; width: 220px;">
-                  <span class="stamp-seal">PAID & AUDITED</span>
-                  <p style="margin: 6px 0 2px 0; font-size: 11px; font-weight: bold; font-family: 'JetBrains Mono', monospace;">
-                    DOC ID: ${selectedRequest.id.replace('REQ', 'DOC')}
-                  </p>
-                  <p style="margin: 0; font-size: 9px; color: #64748b;">
-                    วันที่พิมพ์: ${new Date().toISOString().split('T')[0]} ${new Date().toLocaleTimeString('th-TH')}
-                  </p>
-                </td>
-              </tr>
-            </table>
+            ${getLetterheadHtml(companyData, '#1e3a8a', `
+              <span class="stamp-seal" style="border: 2px solid #10b981; color: #10b981; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; display: inline-block;">PAID & AUDITED</span>
+              <p style="margin: 6px 0 2px 0; font-size: 10px; font-weight: bold; font-family: monospace;">
+                DOC ID: ${selectedRequest.id.replace('REQ', 'DOC')}
+              </p>
+              <p style="margin: 0; font-size: 8px; color: #64748b; font-family: 'Sarabun', sans-serif;">
+                วันที่พิมพ์: ${new Date().toISOString().split('T')[0]}
+              </p>
+            `)}
 
             <!-- SECTION TITLE -->
             <div style="background-color: #f1f5f9; text-align: center; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 20px;">
@@ -1502,33 +1475,19 @@ export default function DocumentPdfManagerView() {
                   </div>
 
                   {/* Header Row */}
-                  <div className="border-b-2 border-slate-950 pb-4 flex justify-between items-start">
-                    <div className="flex gap-3">
-                      <img 
-                        src={companyData?.logoUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=60'} 
-                        className="h-14 w-14 rounded-xl object-cover border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shrink-0 shadow-sm" 
-                        alt="company logo" 
-                        referrerPolicy="no-referrer"
-                      />
-                      <div>
-                        <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white leading-tight">
-                          {companyData?.companyName || 'บริษัท โอเค เอ็กซ์เพนส์ แมเนจเมนท์ จำกัด'}
-                        </h3>
-                        <p className="text-[9px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed mt-1">{companyData?.address || '99/9 ถนนพระราม 9 แขวงห้วยขวาง เขตห้วยขวาง กรุงเทพมหานคร 10310'}</p>
-                        <p className="text-[9px] text-slate-500 dark:text-slate-400 font-semibold mt-0.5">
-                          เลขประจำตัวผู้เสียภาษี (Tax ID): {companyData?.taxId || '0-1055-66000-11-2'}
-                          | โทร: {companyData?.phone || '02-123-4567'} | อีเมล: {companyData?.email || 'finance@okay.com'}
-                        </p>
+                  <CompanyLetterhead 
+                    companyData={companyData} 
+                    primaryColor="#1e3a8a" 
+                    rightContent={
+                      <div className="text-right shrink-0">
+                        <span className="px-2.5 py-0.5 border-2 border-emerald-500 text-emerald-600 text-[9px] font-black uppercase tracking-wider rounded rotate-[-4deg] inline-block mb-1.5 shadow-xs">
+                          PAID & AUDITED
+                        </span>
+                        <p className="text-xs font-mono font-bold text-slate-900 dark:text-white leading-none">DOC ID: {selectedRequest.id.replace('REQ', 'DOC')}</p>
+                        <p className="text-[10px] text-slate-500 font-semibold mt-1">พิมพ์เมื่อ: {new Date().toISOString().split('T')[0]}</p>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="px-2.5 py-0.5 border-2 border-emerald-500 text-emerald-600 text-[9px] font-black uppercase tracking-wider rounded rotate-[-4deg] inline-block mb-1.5 shadow-xs">
-                        PAID & AUDITED
-                      </span>
-                      <p className="text-xs font-mono font-bold text-slate-900 dark:text-white">DOC ID: {selectedRequest.id.replace('REQ', 'DOC')}</p>
-                      <p className="text-[10px] text-slate-550 font-semibold">พิมพ์เมื่อ: {new Date().toISOString().split('T')[0]}</p>
-                    </div>
-                  </div>
+                    }
+                  />
 
                   {/* Document Subject */}
                   <div className="text-center py-2.5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">

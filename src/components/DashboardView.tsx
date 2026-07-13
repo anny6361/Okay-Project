@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { uploadToStorage } from '../lib/storage';
+import { openPdfPreview } from '../lib/pdf-preview';
 import { 
   ArrowRight, 
   TrendingUp, 
@@ -1200,7 +1202,14 @@ export default function DashboardView({
       const element = document.getElementById('report-printable-content');
       if (!element) throw new Error('ไม่พบเนื้อหารายงานสำหรับจัดเตรียมหน้าพิมพ์เอกสาร');
 
-      const printWindow = window.open('', '_blank');
+      const printWindow: any = {
+      document: {
+        write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
+        close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
+      },
+      print: () => {},
+      close: () => {}
+    };
       if (!printWindow) {
         throw new Error('เบราว์เซอร์บล็อกหน้าต่างป๊อปอัป! กรุณาอนุญาตให้แสดงป๊อปอัปสำหรับหน้าเว็บ O-KEY ERP เพื่อทำการพิมพ์เอกสาร');
       }
@@ -3205,12 +3214,12 @@ export default function DashboardView({
                           onChange={e => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              const r = new FileReader();
-                              r.onload = () => {
-                                setSettlementProofUrl(r.result as string);
+                              uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
+      
+                                setSettlementProofUrl(dataUrl);
                                 setSettlementProofName(file.name);
-                              };
-                              r.readAsDataURL(file);
+                              
+    });
                             }
                           }}
                           className="w-full text-xs"
@@ -3259,12 +3268,12 @@ export default function DashboardView({
                       onChange={e => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          const r = new FileReader();
-                          r.onload = () => {
-                            setSettlementProofUrl(r.result as string);
+                          uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
+      
+                            setSettlementProofUrl(dataUrl);
                             setSettlementProofName(file.name);
-                          };
-                          r.readAsDataURL(file);
+                          
+    });
                         }
                       }}
                       className="w-full text-xs"
@@ -3339,12 +3348,12 @@ export default function DashboardView({
                       onChange={e => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          const r = new FileReader();
-                          r.onload = () => {
-                            setSettlementProofUrl(r.result as string);
+                          uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
+      
+                            setSettlementProofUrl(dataUrl);
                             setSettlementProofName(file.name);
-                          };
-                          r.readAsDataURL(file);
+                          
+    });
                         }
                       }}
                       className="w-full text-xs"
@@ -3378,10 +3387,7 @@ export default function DashboardView({
                       return;
                     }
                   } else if (settlementModalRequest.expense_type !== 'advance') {
-                    if (!settlementProofUrl) {
-                      alert('กรุณาอัปโหลดหลักฐานการโอนจ่ายเงินชดเชย');
-                      return;
-                    }
+                    
                   }
                   
                   // Submit

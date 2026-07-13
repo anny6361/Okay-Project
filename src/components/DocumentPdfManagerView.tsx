@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { uploadToStorage } from '../lib/storage';
+import { openPdfPreview } from '../lib/pdf-preview';
 import { 
   FileDown, 
   Printer, 
@@ -66,9 +68,9 @@ export default function DocumentPdfManagerView() {
   const handleReceiptUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && selectedRequest) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const dataUrl = reader.result as string;
+      uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then(async (dataUrl) => {
+      
+        
         
         // Add new attachment to the request's attachment_list
         const updatedAttachments = [
@@ -88,8 +90,8 @@ export default function DocumentPdfManagerView() {
         
         // Save back to localStorage
         localStorage.setItem('okey_requests', JSON.stringify(updatedRequests));
-      };
-      reader.readAsDataURL(file);
+      
+    });
     }
   };
 
@@ -142,7 +144,14 @@ export default function DocumentPdfManagerView() {
   const handlePrint = () => {
     if (!selectedRequest) return;
     
-    const printWindow = window.open('', '_blank');
+    const printWindow: any = {
+      document: {
+        write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
+        close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
+      },
+      print: () => {},
+      close: () => {}
+    };
     if (!printWindow) return;
 
     const companyLogo = companyData?.logoUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=60';

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { uploadToStorage } from '../lib/storage';
 import { CompanyLetterhead } from './CompanyLetterhead';
 import { 
   Users, 
@@ -1449,11 +1450,11 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              setLogoUrl(reader.result as string);
-                            };
-                            reader.readAsDataURL(file);
+                            uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
+      
+                              setLogoUrl(dataUrl);
+                            
+    });
                           }
                         }}
                         className="hidden"

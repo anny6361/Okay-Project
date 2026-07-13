@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { uploadToStorage } from '../lib/storage';
+import { openPdfPreview } from '../lib/pdf-preview';
 import { 
   Plus, 
   Trash2, 
@@ -255,17 +257,17 @@ export default function MyRequestsView({
 
   const handleEvidenceUpload = (files: File[], category?: string) => {
     files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
+      uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then(async (dataUrl) => {
+      
+        
         setAttachmentList(prev => [...prev, {
           name: file.name,
           type: file.type,
           dataUrl: dataUrl,
           category: (category as any) || 'เอกสารอื่น ๆ'
         }]);
-      };
-      reader.readAsDataURL(file);
+      
+    });
     });
   };
 
@@ -274,17 +276,17 @@ export default function MyRequestsView({
   };
 
   const handleReplaceAttachment = (index: number, file: File, category?: string) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
+    uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then(async (dataUrl) => {
+      
+      
       setAttachmentList(prev => prev.map((item, idx) => idx === index ? {
         name: file.name,
         type: file.type,
         dataUrl: dataUrl,
         category: (category as any) || item.category
       } : item));
-    };
-    reader.readAsDataURL(file);
+    
+    });
   };
   
   // Load categories and departments from local database
@@ -353,10 +355,10 @@ export default function MyRequestsView({
       }
 
       await new Promise<void>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = async () => {
+        uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then(async (dataUrl) => {
+      
           try {
-            const dataUrl = reader.result as string;
+            
             const fileObj = {
               name: file.name,
               type: file.type,
@@ -370,8 +372,16 @@ export default function MyRequestsView({
             // Only run OCR auto-extraction on the first file uploaded overall
             if (i === 0 && uploadedFiles.length === 0) {
               setUploadedFile(fileObj);
-              const commaIndex = dataUrl.indexOf(',');
-              const base64Data = commaIndex !== -1 ? dataUrl.substring(commaIndex + 1) : dataUrl;
+              // Read file as base64 for OCR
+              const base64Data = await new Promise((res) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  const result = reader.result as string;
+                  const idx = result.indexOf(',');
+                  res(idx !== -1 ? result.substring(idx + 1) : result);
+                };
+                reader.readAsDataURL(file);
+              });
 
               // Call the server-side API proxy
               const response = await fetch('/api/ocr', {
@@ -462,14 +472,8 @@ export default function MyRequestsView({
             setOcrError(err instanceof Error ? err.message : String(err));
             resolve();
           }
-        };
-
-        reader.onerror = () => {
-          setOcrError('เกิดข้อผิดพลาดในการอ่านไฟล์');
-          resolve();
-        };
-
-        reader.readAsDataURL(file);
+        
+    });
       });
     }
 
@@ -990,7 +994,14 @@ export default function MyRequestsView({
             <button
               onClick={() => {
                 const companyData = getDbCompanyData();
-                const w = window.open('', '_blank');
+                const w: any = {
+      document: {
+        write: (html: string) => { w._html = (w._html || '') + html; },
+        close: () => { openPdfPreview(w._html, 'เอกสาร (PDF Preview)'); }
+      },
+      print: () => {},
+      close: () => {}
+    };
                 if (w) {
                   const logoHtml = companyData.logoUrl 
                     ? `<img src="${companyData.logoUrl}" style="height: 50px; max-width: 150px; object-fit: contain;" />` 
@@ -2573,7 +2584,14 @@ export default function MyRequestsView({
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          const printWindow = window.open('', '_blank');
+                                          const printWindow: any = {
+      document: {
+        write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
+        close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
+      },
+      print: () => {},
+      close: () => {}
+    };
                                           if (printWindow) {
                                             printWindow.document.write(`
                                               <html>
@@ -2756,11 +2774,11 @@ export default function MyRequestsView({
                       const file = e.target.files?.[0];
                       if (file) {
                         setRefundFileName(file.name);
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                          setRefundFileUrl(reader.result as string);
-                        };
-                        reader.readAsDataURL(file);
+                        uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then(async (dataUrl) => {
+      
+                          setRefundFileUrl(dataUrl);
+                        
+    });
                       }
                     }}
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
@@ -2805,14 +2823,8 @@ export default function MyRequestsView({
               </button>
               <button
                 onClick={() => {
-                  if (!refundDate) {
-                    alert('กรุณากรอกวันที่โอนคืนเงิน');
-                    return;
-                  }
-                  if (!refundFileUrl) {
-                    alert('กรุณาแนบสลิป/หลักฐานการโอนเงิน');
-                    return;
-                  }
+                  
+                  
                   
                   // Add a comment to request
                   const newComment = {
@@ -2949,7 +2961,14 @@ export default function MyRequestsView({
               </a>
               <button 
                 onClick={() => {
-                  const w = window.open('', '_blank');
+                  const w: any = {
+      document: {
+        write: (html: string) => { w._html = (w._html || '') + html; },
+        close: () => { openPdfPreview(w._html, 'เอกสาร (PDF Preview)'); }
+      },
+      print: () => {},
+      close: () => {}
+    };
                   if (w) {
                     w.document.write(`
                       <html>

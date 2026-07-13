@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { openPdfPreview } from '../lib/pdf-preview';
 import { Search, Filter, Calendar, FileText, Image as ImageIcon, ZoomIn, Download, File, X, ChevronLeft, ChevronRight, RotateCw, ZoomOut, Printer, Grid, List } from 'lucide-react';
 import { getDbRequests, addEnterpriseAuditLog } from '../data/db';
 import { ExpenseRequest } from '../types';
@@ -301,7 +302,14 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
               <button 
                 onClick={() => {
                   addEnterpriseAuditLog(currentUser.user_id, currentUser.name, currentUser.approval_level || 'Staff', 'Print', `Printed document ${viewerItem.name} for ${viewerItem.reqId}`);
-                  const w = window.open('', '_blank');
+                  const w: any = {
+      document: {
+        write: (html: string) => { w._html = (w._html || '') + html; },
+        close: () => { openPdfPreview(w._html, 'เอกสาร (PDF Preview)'); }
+      },
+      print: () => {},
+      close: () => {}
+    };
                   if (w) {
                     w.document.write(`
                       <html>

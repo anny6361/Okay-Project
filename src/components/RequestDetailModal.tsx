@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { openPdfPreview } from '../lib/pdf-preview';
 import { 
   X, 
   Calendar, 
@@ -29,7 +30,14 @@ function ReceiptViewer({ receiptName, amount, title, date, id }: { receiptName: 
   const handleRotate = () => setRotation(prev => (prev + 90) % 360);
 
   const handlePrint = () => {
-    const printWindow = window.open('', '_blank');
+    const printWindow: any = {
+      document: {
+        write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
+        close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
+      },
+      print: () => {},
+      close: () => {}
+    };
     if (printWindow) {
       printWindow.document.write(`
         <html>
@@ -198,7 +206,14 @@ function ReplacementReceiptViewer({ request }: { request: ExpenseRequest }) {
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 25, 50));
 
   const handlePrint = () => {
-    const printWindow = window.open('', '_blank');
+    const printWindow: any = {
+      document: {
+        write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
+        close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
+      },
+      print: () => {},
+      close: () => {}
+    };
     if (printWindow) {
       const formattedAmount = (request.amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 });
       const filesText = request.attachment_list && request.attachment_list.length > 0

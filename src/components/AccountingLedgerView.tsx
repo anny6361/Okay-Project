@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { openPdfPreview } from '../lib/pdf-preview';
 import { 
   BookOpen, 
   Receipt, 
@@ -204,11 +205,15 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
 
   const handlePrintVoucher = (doc: AccountingDocument, action: 'print' | 'pdf' = 'print') => {
     if (!doc) return;
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('ไม่สามารถเปิดหน้าต่างใหม่ได้ กรุณาปิด Pop-up Blocker');
-      return;
-    }
+    const printWindow: any = {
+      document: {
+        write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
+        close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
+      },
+      print: () => {},
+      close: () => {}
+    };
+    
 
     // Resolve associated request if any
     let req = associatedRequest;
@@ -1937,7 +1942,7 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
                             {/* Full screen button */}
                             <button
                               type="button"
-                              onClick={() => window.open(activeDoc.url, '_blank')}
+                              onClick={() => (typeof activeDoc.url === 'string' && activeDoc.url.startsWith('http') ? window.open(activeDoc.url, '_blank') : null)}
                               className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm"
                               title="เปิดดูเต็มหน้าจอ"
                             >
@@ -1967,7 +1972,14 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
                             <button
                               type="button"
                               onClick={() => {
-                                const printWindow = window.open('', '_blank');
+                                const printWindow: any = {
+      document: {
+        write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
+        close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
+      },
+      print: () => {},
+      close: () => {}
+    };
                                 if (printWindow) {
                                   if (isPdf) {
                                     printWindow.document.write(`

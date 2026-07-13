@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { uploadToStorage } from '../lib/storage';
 import { 
   Phone, 
   Lock, 
@@ -26,6 +27,9 @@ import {
 } from 'lucide-react';
 import { UserProfile, Department } from '../types';
 import { getDbUsers, saveDbUsers, getDbDepartments, hashPassword, comparePassword, validateThaiNationalID, calculateAge, addEnterpriseAuditLog } from '../data/db';
+import { auth, db } from '../firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
 
 interface LoginViewProps {
   onLoginSuccess: (user: UserProfile, rememberMe: boolean) => void;
@@ -36,6 +40,7 @@ type AuthMode = 'login' | 'register' | 'forgot';
 export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [mode, setMode] = useState<AuthMode>('login');
   const [rememberMe, setRememberMe] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Database state
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -166,11 +171,11 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const handleProfilePicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setRegProfilePic(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
+      
+        setRegProfilePic(dataUrl);
+      
+    });
     }
   };
 
@@ -222,12 +227,12 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     setSignaturePoints(prev => [...prev, point]);
   };
 
-  const stopDrawing = () => {
+  const stopDrawing = async () => {
     if (!isDrawing) return;
     setIsDrawing(false);
     const canvas = canvasRef.current;
     if (canvas) {
-      const dataUrl = canvas.toDataURL('image/png');
+      const dataUrl = await uploadToStorage('signatures/' + Date.now() + '.png', canvas.toDataURL('image/png'));
       setSignatureImage(dataUrl);
     }
   };
@@ -247,96 +252,75 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   // -----------------------------------------
 
   // A. LOGIN SUBMIT
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
     setFormErrors({});
 
     const errors: Record<string, string> = {};
-    if (!loginPhone.trim()) {
-      errors.loginPhone = 'กรุณากรอก Username, อีเมล หรือเบอร์โทรศัพท์';
-    }
-    if (!loginPassword) {
-      errors.loginPassword = 'กรุณากรอกรหัสผ่าน';
-    }
+    if (!loginPhone.trim()) errors.loginPhone = 'กรุณากรอก Username, อีเมล หรือเบอร์โทรศัพท์';
+    if (!loginPassword) errors.loginPassword = 'กรุณากรอกรหัสผ่าน';
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       setErrorMsg('กรุณากรอกข้อมูลบัญชีและรหัสผ่านให้ครบถ้วน');
-      const keyToId: Record<string, string> = {
-        loginPhone: 'login-phone',
-        loginPassword: 'login-password'
-      };
-      const firstId = keyToId[Object.keys(errors)[0]];
-      if (firstId) {
-        document.getElementById(firstId)?.focus();
+      return;
+    }
+
+    setIsSubmitting(true);
+    
+    try {
+      const dbUsers = getDbUsers();
+      const userLower = loginPhone.trim().toLowerCase();
+      
+      const userAccount = dbUsers.find(u => 
+        (u.username && u.username.toLowerCase() === userLower) ||
+        (u.email && u.email.toLowerCase() === userLower) ||
+        (u.phone && u.phone === userLower)
+      );
+
+      if (!userAccount) {
+        throw new Error('ไม่พบบัญชีผู้ใช้งานนี้ในระบบ');
       }
-      return;
-    }
 
-    const identifier = loginPhone.trim().toLowerCase();
-    const matchedUser = users.find(u => {
-      const uUsername = (u.username || '').toLowerCase();
-      const uEmail = (u.email || '').toLowerCase();
-      const uPhoneClean = (u.phone || '').replace(/[-\s]/g, '');
-      const cleanInput = identifier.replace(/[-\s]/g, '');
+      if (!userAccount.is_active || userAccount.deleted) {
+        throw new Error('บัญชีนี้ถูกระงับการใช้งาน โปรดติดต่อผู้ดูแลระบบ');
+      }
+
+      if ((userAccount as any).password_hash) {
+        if (!comparePassword(loginPassword, (userAccount as any).password_hash)) {
+          throw new Error('รหัสผ่านไม่ถูกต้อง');
+        }
+      } else {
+        if (loginPassword !== userAccount.password) {
+          throw new Error('รหัสผ่านไม่ถูกต้อง');
+        }
+      }
+
+      // Sync to Firebase Auth
+      const loginEmail = userAccount.email || (userAccount.username + '@okey.com').toLowerCase();
+      try {
+        await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+      } catch (authError: any) {
+        if (authError.code === 'auth/user-not-found' || authError.code === 'auth/invalid-credential') {
+          // Create user in Firebase Auth transparently
+          const userCredential = await createUserWithEmailAndPassword(auth, loginEmail, loginPassword);
+        } else {
+          throw authError;
+        }
+      }
+
+      onLoginSuccess(userAccount, rememberMe);
       
-      const isUsernameMatch = uUsername === identifier;
-      const isEmailMatch = uEmail === identifier;
-      const isPhoneMatch = uPhoneClean && cleanInput && uPhoneClean === cleanInput;
-      
-      const isPasswordMatch = u.password === loginPassword || comparePassword(loginPassword, u.password || '');
-      
-      return (isUsernameMatch || isEmailMatch || isPhoneMatch) && isPasswordMatch;
-    });
-
-    if (!matchedUser) {
-      addEnterpriseAuditLog(
-        'System_Guest',
-        'Guest User',
-        'None',
-        'Auth_Fail',
-        `ความพยายามลงชื่อเข้าใช้ล้มเหลวสำหรับบัญชี: ${loginPhone}`
-      );
-      setErrorMsg('ข้อมูลเข้าสู่ระบบไม่ถูกต้อง (ตรวจสอบ Username / อีเมล / เบอร์โทรศัพท์ และรหัสผ่าน)');
-      return;
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    if (!matchedUser.is_active) {
-      addEnterpriseAuditLog(
-        matchedUser.user_id,
-        matchedUser.name,
-        matchedUser.approval_level,
-        'Auth_Suspended',
-        `ความพยายามเข้าใช้บัญชีที่ถูกระงับ: ${matchedUser.username}`
-      );
-      setErrorMsg('บัญชีนี้ถูกระงับการใช้งานชั่วคราว กรุณาติดต่อแอดมิน');
-      return;
-    }
-
-    // Check if password change is forced
-    if (matchedUser.force_password_change) {
-      setForceChangeUser(matchedUser);
-      setSuccessMsg('โปรดทำการเปลี่ยนรหัสผ่านเพื่อความปลอดภัยในการเริ่มเข้าสู่ระบบครั้งแรก');
-      return;
-    }
-
-    addEnterpriseAuditLog(
-      matchedUser.user_id,
-      matchedUser.name,
-      matchedUser.approval_level,
-      'Auth_Login',
-      'ผู้ใช้งานลงชื่อเข้าสู่ระบบ ERP สำเร็จ'
-    );
-
-    setSuccessMsg(`ยินดีต้อนรับกลับมา, คุณ${matchedUser.name}!`);
-    setTimeout(() => {
-      onLoginSuccess(matchedUser, rememberMe);
-    }, 1000);
   };
 
-  // B. FORCED PASSWORD CHANGE SUBMIT
   const handleForcedPasswordChange = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');

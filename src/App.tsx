@@ -1,4 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { auth, db } from './firebase';
+import { runTransaction, doc } from 'firebase/firestore';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { setupFirestoreSync, setGlobalRenderTrigger, DB_CACHE, saveToFirestore, getFromCache } from './lib/firestore-sync';
+import { migrateLocalToFirestore } from './lib/migration';
 import { 
   Bell, 
   Search, 
@@ -18,6 +23,7 @@ import {
   Loader2
 } from 'lucide-react';
 import Sidebar from './components/Sidebar';
+import PdfPreviewModal from './components/PdfPreviewModal';
 import RequestDetailModal from './components/RequestDetailModal';
 import LoginView from './components/LoginView';
 
@@ -77,6 +83,8 @@ export default function App() {
 
   
   const [isSessionChecking, setIsSessionChecking] = useState(true);
+  const [syncCounter, setSyncCounter] = useState(0);
+  const [isLoaded, setIsLoaded] = useState(false);
   
   // Simulated Logged-In User States (Users Table simulation)
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
@@ -150,221 +158,45 @@ export default function App() {
   }, [currentUser, requests]);
 
   // Load and synchronize data from localStorage database
-  const loadDatabase = () => {
+  const loadDatabase = useCallback(() => {
     const dbUsers = getDbUsers();
     setUsersList(dbUsers);
     
-    // Auto-sync current user if they are logged in
-    const savedUserId = localStorage.getItem('okey_simulated_user_id') || sessionStorage.getItem('okey_session_user_id');
-    if (savedUserId) {
-      const matchedUser = dbUsers.find(u => u.user_id === savedUserId);
+    const fbUser = auth.currentUser;
+    if (fbUser && fbUser.email) {
+      const matchedUser = dbUsers.find(u => u.email === fbUser.email || (u.username + '@okey.com').toLowerCase() === fbUser.email.toLowerCase());
       if (matchedUser && matchedUser.is_active) {
         setCurrentUser(matchedUser);
       }
     }
 
-    const savedRequests = localStorage.getItem('okey_requests');
-    const savedBudgets = localStorage.getItem('okey_budgets');
+    const savedRequests = getFromCache('okey_requests', []);
+    const savedBudgets = getFromCache('okey_budgets', []);
+    setRequests(savedRequests);
+    setBudgets(savedBudgets);
+    setIsLoaded(true);
+  }, [syncCounter]);
 
-    let loadedRequests: ExpenseRequest[] = [];
-    if (savedRequests) {
-      loadedRequests = JSON.parse(savedRequests);
-    } else {
-      // Pre-seed and enrich initial requests with dynamic user and approver IDs
-      const enriched = [].map(req => {
-        let created_by = 'user-1'; // Default สมชาย
-        let current_approver: string | undefined = undefined;
-        let next_approver: string | null = null;
-
-        if (req.id === 'EXP-2026-001') {
-          created_by = 'user-1';       // สมชาย
-          current_approver = 'user-3'; // รุ่งโรจน์ (after Level 1 ณภัทร approved)
-          next_approver = 'user-4';    // มนัญญา
-        } else if (req.id === 'EXP-2026-002') {
-          created_by = 'user-2';       // ณภัทร
-          current_approver = 'user-3'; // รุ่งโรจน์
-          next_approver = 'user-4';    // มนัญญา
-        } else if (req.id === 'EXP-2026-003') {
-          created_by = 'user-1';
-        } else if (req.id === 'EXP-2026-004') {
-          created_by = 'user-5';       // วิลาสินี
-        } else if (req.id === 'EXP-2026-005') {
-          created_by = 'user-1';
-        } else if (req.id === 'EXP-2026-006') {
-          created_by = 'user-2';
-        }
-        
-        return {
-          ...req,
-          created_by,
-          current_approver,
-          next_approver
-        };
-      });
-      loadedRequests = enriched;
-      localStorage.setItem('okey_requests', JSON.stringify(enriched));
-    }
-    setRequests(loadedRequests);
-
-    let loadedBudgets: DepartmentBudget[] = [];
-    if (savedBudgets) {
-      loadedBudgets = JSON.parse(savedBudgets);
-    } else {
-      loadedBudgets = [];
-    }
-
-    const depts = getDbDepartments();
-    const computedBudgets = loadedBudgets.map(b => {
-      let spent = 0;
-      let pending = 0;
-      loadedRequests.forEach(r => {
-        const rDept = r.department ? r.department.toLowerCase() : '';
-        const bDept = b.department ? b.department.toLowerCase() : '';
-        if (rDept === bDept || rDept.includes(bDept) || bDept.includes(rDept)) {
-          const statusLower = r.status ? r.status.toLowerCase() : '';
-          if (statusLower === 'approved' || statusLower === 'paid' || statusLower === 'cleared') {
-            spent += r.amount;
-          } else if (statusLower === 'pending') {
-            pending += r.amount;
-          }
-        }
-      });
-
-      // Match department name from getDbDepartments()
-      const matchedDept = depts.find(d => {
-        const dName = d.department_name ? d.department_name.toLowerCase() : '';
-        const bName = b.department ? b.department.toLowerCase() : '';
-        return dName === bName || dName.includes(bName) || bName.includes(dName);
-      });
-      const allocated = matchedDept ? matchedDept.budget : b.allocated;
-
-      return { ...b, allocated: allocated || 100000, spent, pending };
-    });
-
-    setBudgets(computedBudgets);
-    localStorage.setItem('okey_budgets', JSON.stringify(computedBudgets));
-  };
-
-  // Initialize & Auto Login Session Checking
   useEffect(() => {
-    const initializeApp = async () => {
-      // Setup direct real-time Firestore synchronization using the client-side Firebase SDK
-      const unsubscribeSync = setupClientFirestoreSync(() => {
-        loadLocalState();
-        window.dispatchEvent(new Event('okey-sync')); // Trigger react sub-views re-renders
-      });
-
-      // Setup state reload function
-      const loadLocalState = () => {
-        // 1. Load users list, requests and budgets
-        const dbUsers = getDbUsers();
-        setUsersList(dbUsers);
-
-        const savedRequests = localStorage.getItem('okey_requests');
-        let loadedRequests: ExpenseRequest[] = [];
-        if (savedRequests) {
-          loadedRequests = JSON.parse(savedRequests);
-        }
-        setRequests(loadedRequests);
-
-        const savedBudgets = localStorage.getItem('okey_budgets');
-        let loadedBudgets: DepartmentBudget[] = [];
-        if (savedBudgets) {
-          loadedBudgets = JSON.parse(savedBudgets);
-        }
-
-        const depts = getDbDepartments();
-        const computedBudgets = loadedBudgets.map(b => {
-          let spent = 0;
-          let pending = 0;
-          loadedRequests.forEach(r => {
-            const rDept = r.department ? r.department.toLowerCase() : '';
-            const bDept = b.department ? b.department.toLowerCase() : '';
-            if (rDept === bDept || rDept.includes(bDept) || bDept.includes(rDept)) {
-              const statusLower = r.status ? r.status.toLowerCase() : '';
-              if (statusLower === 'approved' || statusLower === 'paid' || statusLower === 'cleared') {
-                spent += r.amount;
-              } else if (statusLower === 'pending') {
-                pending += r.amount;
-              }
-            }
-          });
-          const matchedDept = depts.find(d => {
-            const dName = d.department_name ? d.department_name.toLowerCase() : '';
-            const bName = b.department ? b.department.toLowerCase() : '';
-            return dName === bName || dName.includes(bName) || bName.includes(dName);
-          });
-          const allocated = matchedDept ? matchedDept.budget : b.allocated;
-          return { ...b, allocated: allocated || 100000, spent, pending };
-        });
-        setBudgets(computedBudgets);
-
-        // 2. Authenticate Session / Auto Login
-        const token = localStorage.getItem('okey_session_token');
-        let authenticatedUser: UserProfile | null = null;
-
-        if (token) {
-          try {
-            // Safe decoding (obfuscated JSON base64 token storage)
-            const decrypted = JSON.parse(atob(token));
-            const now = Date.now();
-            
-            if (decrypted && decrypted.userId && decrypted.expiry > now) {
-              const matched = dbUsers.find(u => u.user_id === decrypted.userId);
-              if (matched && matched.is_active) {
-                authenticatedUser = matched;
-              }
-            }
-          } catch (err) {
-            console.error("Session verification failed", err);
-            localStorage.removeItem('okey_session_token');
-          }
-        }
-
-        // Check fallback in sessionStorage if Remember Me was off but tab is active
-        if (!authenticatedUser) {
-          const sessionUserId = sessionStorage.getItem('okey_session_user_id');
-          if (sessionUserId) {
-            const matched = dbUsers.find(u => u.user_id === sessionUserId);
-            if (matched && matched.is_active) {
-              authenticatedUser = matched;
-            }
-          }
-        }
-        
-        return authenticatedUser;
-      };
-
-      const authUser = loadLocalState();
-      
-      // Listen for okey-sync updates to refresh UI immediately
-      const handleSync = () => loadLocalState();
-      window.addEventListener('okey-sync', handleSync);
-
-      // 3. Splash Screen display (1.5 seconds minimum for nice UX)
-      setTimeout(() => {
-        if (authUser) {
-          setCurrentUser(authUser);
-          setActiveTab('dashboard');
-        } else {
-          setCurrentUser(null);
-        }
-        setIsSessionChecking(false);
-      }, 1500);
-
-      return () => {
-        unsubscribeSync();
-        window.removeEventListener('okey-sync', handleSync);
-      };
-    };
-
-    initializeApp();
+    setGlobalRenderTrigger(() => setSyncCounter(c => c + 1));
+    setupFirestoreSync();
+    migrateLocalToFirestore().catch(console.error);
+    
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setIsSessionChecking(false);
+      setSyncCounter(c => c + 1); // trigger reload
+    });
+    return () => unsub();
   }, []);
+
+  useEffect(() => {
+    loadDatabase();
+  }, [loadDatabase]);
 
   // Save state to localStorage
   const saveState = (updatedRequests: ExpenseRequest[], updatedBudgets?: DepartmentBudget[]) => {
     setRequests(updatedRequests);
-    localStorage.setItem('okey_requests', JSON.stringify(updatedRequests));
+    // localStorage.setItem('okey_requests', JSON.stringify(updatedRequests));
 
     const dbDepts = getDbDepartments();
     const baseBudgets = updatedBudgets || budgets;
@@ -395,7 +227,7 @@ export default function App() {
     });
 
     setBudgets(computedBudgets);
-    localStorage.setItem('okey_budgets', JSON.stringify(computedBudgets));
+    // localStorage.setItem('okey_budgets', JSON.stringify(computedBudgets));
   };
 
   // Toggle Dark Mode
@@ -956,7 +788,7 @@ export default function App() {
       return b;
     });
     setBudgets(nextBudgets);
-    localStorage.setItem('okey_budgets', JSON.stringify(nextBudgets));
+    // localStorage.setItem('okey_budgets', JSON.stringify(nextBudgets));
   };
 
   // Count pending approvals for the simulated active user
@@ -985,8 +817,8 @@ export default function App() {
       );
     }
     setCurrentUser(null);
-    localStorage.removeItem('okey_simulated_user_id');
-    localStorage.removeItem('okey_session_token');
+    // localStorage.removeItem('okey_simulated_user_id');
+    // localStorage.removeItem('okey_session_token');
     sessionStorage.removeItem('okey_session_user_id');
   };
 
@@ -1039,12 +871,12 @@ export default function App() {
               created: Date.now()
             };
             const token = btoa(JSON.stringify(sessionData));
-            localStorage.setItem('okey_session_token', token);
-            localStorage.setItem('okey_simulated_user_id', u.user_id);
+            // localStorage.setItem('okey_session_token', token);
+            // localStorage.setItem('okey_simulated_user_id', u.user_id);
           } else {
             sessionStorage.setItem('okey_session_user_id', u.user_id);
-            localStorage.removeItem('okey_session_token');
-            localStorage.removeItem('okey_simulated_user_id');
+            // localStorage.removeItem('okey_session_token');
+            // localStorage.removeItem('okey_simulated_user_id');
           }
           
           // Set to dashboard after login
@@ -1115,7 +947,7 @@ export default function App() {
                     const targetUser = usersList.find(u => u.user_id === e.target.value);
                     if (targetUser) {
                       setCurrentUser(targetUser);
-                      localStorage.setItem('okey_simulated_user_id', targetUser.user_id);
+                      // localStorage.setItem('okey_simulated_user_id', targetUser.user_id);
                     }
                   }}
                   className="text-xs font-bold bg-transparent border-none text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer pr-1 py-0.5"

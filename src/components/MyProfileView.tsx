@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { uploadToStorage } from '../lib/storage';
 import { 
   User, 
   Mail, 
@@ -124,12 +125,12 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
     ctx.stroke();
   };
 
-  const stopDrawing = () => {
+  const stopDrawing = async () => {
     if (!isDrawing) return;
     setIsDrawing(false);
     const canvas = canvasRef.current;
     if (canvas) {
-      const dataUrl = canvas.toDataURL('image/png');
+      const dataUrl = await uploadToStorage('signatures/' + Date.now() + '.png', canvas.toDataURL('image/png'));
       setSignatureImage(dataUrl);
     }
   };
@@ -146,22 +147,22 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
   const handleProfilePicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProfilePic(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
+      
+        setProfilePic(dataUrl);
+      
+    });
     }
   };
 
   const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSignatureImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
+      
+        setSignatureImage(dataUrl);
+      
+    });
     }
   };
 

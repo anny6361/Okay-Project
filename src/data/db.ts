@@ -1,3 +1,4 @@
+import { getFromCache, saveToFirestore } from '../lib/firestore-sync';
 import { 
   UserProfile, 
   ApprovalRule, 
@@ -282,10 +283,10 @@ export function comparePassword(password: string, hash: string): boolean {
 }
 
 export function getDbUsers(): UserProfile[] {
-  const users = localStorage.getItem('okey_db_users');
+  const users = getFromCache('okey_db_users');
   if (users) {
     try {
-      let parsed = JSON.parse(users);
+      let parsed = (typeof users === 'string' ? JSON.parse(users) : users);
       let modified = false;
 
       // Ensure Super Administrator is always present
@@ -362,7 +363,7 @@ export function getDbUsers(): UserProfile[] {
         return u;
       });
       if (modified) {
-        localStorage.setItem('okey_db_users', JSON.stringify(enriched));
+        saveToFirestore('okey_db_users', enriched);
         return enriched;
       }
       return parsed;
@@ -371,7 +372,7 @@ export function getDbUsers(): UserProfile[] {
         ...u,
         password: u.password ? hashPassword(u.password) : undefined
       }));
-      localStorage.setItem('okey_db_users', JSON.stringify(initialWithHashedPasswords));
+      saveToFirestore('okey_db_users', initialWithHashedPasswords);
       return initialWithHashedPasswords;
     }
   }
@@ -380,7 +381,7 @@ export function getDbUsers(): UserProfile[] {
     ...u,
     password: u.password ? hashPassword(u.password) : undefined
   }));
-  localStorage.setItem('okey_db_users', JSON.stringify(initialWithHashedPasswords));
+  saveToFirestore('okey_db_users', initialWithHashedPasswords);
   return initialWithHashedPasswords;
 }
 
@@ -410,30 +411,30 @@ export function saveDbUsers(users: UserProfile[]) {
     return u;
   });
 
-  localStorage.setItem('okey_db_users', JSON.stringify(finalUsers));
+  saveToFirestore('okey_db_users', finalUsers);
 }
 
 export function getDbRules(): ApprovalRule[] {
-  const rules = localStorage.getItem('okey_db_rules');
-  if (rules) return JSON.parse(rules);
-  localStorage.setItem('okey_db_rules', JSON.stringify(INITIAL_RULES));
+  const rules = getFromCache('okey_db_rules');
+  if (rules) return (typeof rules === 'string' ? JSON.parse(rules) : rules);
+  saveToFirestore('okey_db_rules', INITIAL_RULES);
   return INITIAL_RULES;
 }
 
 export function saveDbRules(rules: ApprovalRule[]) {
-  localStorage.setItem('okey_db_rules', JSON.stringify(rules));
+  saveToFirestore('okey_db_rules', rules);
 }
 
 export function getDbLogs(): ApprovalLog[] {
-  const logs = localStorage.getItem('okey_db_logs');
-  if (logs) return JSON.parse(logs);
+  const logs = getFromCache('okey_db_logs');
+  if (logs) return (typeof logs === 'string' ? JSON.parse(logs) : logs);
   const initialLogs: ApprovalLog[] = [];
-  localStorage.setItem('okey_db_logs', JSON.stringify(initialLogs));
+  saveToFirestore('okey_db_logs', initialLogs);
   return initialLogs;
 }
 
 export function saveDbLogs(logs: ApprovalLog[]) {
-  localStorage.setItem('okey_db_logs', JSON.stringify(logs));
+  saveToFirestore('okey_db_logs', logs);
 }
 
 export function addApprovalLog(requestId: string, actionBy: string, action: 'approve' | 'reject', comment: string) {
@@ -463,14 +464,14 @@ export function getWorkflowChain(requesterId: string): { approverId: string; lev
 // === ENTERPRISE ACCOUNTING & DEPARTMENTS ACCESSORS ===
 
 export function getDbDepartments(): Department[] {
-  const depts = localStorage.getItem('okey_db_departments');
-  if (depts) return JSON.parse(depts);
-  localStorage.setItem('okey_db_departments', JSON.stringify(INITIAL_DEPARTMENTS));
+  const depts = getFromCache('okey_db_departments');
+  if (depts) return (typeof depts === 'string' ? JSON.parse(depts) : depts);
+  saveToFirestore('okey_db_departments', INITIAL_DEPARTMENTS);
   return INITIAL_DEPARTMENTS;
 }
 
 export function saveDbDepartments(depts: Department[]) {
-  localStorage.setItem('okey_db_departments', JSON.stringify(depts));
+  saveToFirestore('okey_db_departments', depts);
 }
 
 export function addDepartment(name: string, head?: string, budget?: number, status?: 'active' | 'disabled'): Department {
@@ -488,15 +489,15 @@ export function addDepartment(name: string, head?: string, budget?: number, stat
 }
 
 export function getDbRefunds(): RefundRecord[] {
-  const data = localStorage.getItem('okey_db_refunds');
-  if (data) return JSON.parse(data);
+  const data = getFromCache('okey_db_refunds');
+  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
   const initial: RefundRecord[] = [];
-  localStorage.setItem('okey_db_refunds', JSON.stringify(initial));
+  saveToFirestore('okey_db_refunds', initial);
   return initial;
 }
 
 export function saveDbRefunds(refunds: RefundRecord[]) {
-  localStorage.setItem('okey_db_refunds', JSON.stringify(refunds));
+  saveToFirestore('okey_db_refunds', refunds);
 }
 
 export function addRefundRecord(advanceId: string, amount: number, status: 'pending' | 'refunded', approvedBy?: string): RefundRecord {
@@ -515,15 +516,15 @@ export function addRefundRecord(advanceId: string, amount: number, status: 'pend
 }
 
 export function getDbDeductions(): DeductionRecord[] {
-  const data = localStorage.getItem('okey_db_deductions');
-  if (data) return JSON.parse(data);
+  const data = getFromCache('okey_db_deductions');
+  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
   const initial: DeductionRecord[] = [];
-  localStorage.setItem('okey_db_deductions', JSON.stringify(initial));
+  saveToFirestore('okey_db_deductions', initial);
   return initial;
 }
 
 export function saveDbDeductions(deductions: DeductionRecord[]) {
-  localStorage.setItem('okey_db_deductions', JSON.stringify(deductions));
+  saveToFirestore('okey_db_deductions', deductions);
 }
 
 export function addDeductionRecord(userId: string, amount: number, method: 'salary' | 'invoice', status: 'pending' | 'deducted', approvedBy?: string): DeductionRecord {
@@ -543,15 +544,15 @@ export function addDeductionRecord(userId: string, amount: number, method: 'sala
 }
 
 export function getDbJournalEntries(): JournalEntry[] {
-  const data = localStorage.getItem('okey_db_journal_entries');
-  if (data) return JSON.parse(data);
+  const data = getFromCache('okey_db_journal_entries');
+  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
   const initial: JournalEntry[] = [];
-  localStorage.setItem('okey_db_journal_entries', JSON.stringify(initial));
+  saveToFirestore('okey_db_journal_entries', initial);
   return initial;
 }
 
 export function saveDbJournalEntries(entries: JournalEntry[]) {
-  localStorage.setItem('okey_db_journal_entries', JSON.stringify(entries));
+  saveToFirestore('okey_db_journal_entries', entries);
 }
 
 export function addJournalEntry(
@@ -579,15 +580,15 @@ export function addJournalEntry(
 }
 
 export function getDbAccountingDocuments(): AccountingDocument[] {
-  const data = localStorage.getItem('okey_db_accounting_docs');
-  if (data) return JSON.parse(data);
+  const data = getFromCache('okey_db_accounting_docs');
+  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
   const initial: AccountingDocument[] = [];
-  localStorage.setItem('okey_db_accounting_docs', JSON.stringify(initial));
+  saveToFirestore('okey_db_accounting_docs', initial);
   return initial;
 }
 
 export function saveDbAccountingDocuments(docs: AccountingDocument[]) {
-  localStorage.setItem('okey_db_accounting_docs', JSON.stringify(docs));
+  saveToFirestore('okey_db_accounting_docs', docs);
 }
 
 export function addAccountingDocument(
@@ -674,80 +675,80 @@ export const INITIAL_PDF_TEMPLATES: PdfTemplateMaster[] = [
 ];
 
 export function getDbCompanyData(): CompanyMasterData {
-  const data = localStorage.getItem('okey_db_company_data');
-  if (data) return JSON.parse(data);
-  localStorage.setItem('okey_db_company_data', JSON.stringify(INITIAL_COMPANY_DATA));
+  const data = getFromCache('okey_db_company_data');
+  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
+  saveToFirestore('okey_db_company_data', INITIAL_COMPANY_DATA);
   return INITIAL_COMPANY_DATA;
 }
 
 export function saveDbCompanyData(data: CompanyMasterData) {
-  localStorage.setItem('okey_db_company_data', JSON.stringify(data));
+  saveToFirestore('okey_db_company_data', data);
 }
 
 // RICH CATEGORIES MASTER DATA
 export function getDbCategories(): ExpenseCategoryMaster[] {
-  const data = localStorage.getItem('okey_db_categories_master');
-  if (data) return JSON.parse(data);
-  localStorage.setItem('okey_db_categories_master', JSON.stringify(INITIAL_CATEGORIES_MASTER));
+  const data = getFromCache('okey_db_categories_master');
+  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
+  saveToFirestore('okey_db_categories_master', INITIAL_CATEGORIES_MASTER);
   return INITIAL_CATEGORIES_MASTER;
 }
 
 export function saveDbCategories(categories: ExpenseCategoryMaster[]) {
-  localStorage.setItem('okey_db_categories_master', JSON.stringify(categories));
+  saveToFirestore('okey_db_categories_master', categories);
 }
 
 // EXPENSE TYPES MASTER DATA
 export function getDbExpenseTypes(): ExpenseTypeMaster[] {
-  const data = localStorage.getItem('okey_db_expense_types');
-  if (data) return JSON.parse(data);
-  localStorage.setItem('okey_db_expense_types', JSON.stringify(INITIAL_EXPENSE_TYPES));
+  const data = getFromCache('okey_db_expense_types');
+  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
+  saveToFirestore('okey_db_expense_types', INITIAL_EXPENSE_TYPES);
   return INITIAL_EXPENSE_TYPES;
 }
 
 export function saveDbExpenseTypes(types: ExpenseTypeMaster[]) {
-  localStorage.setItem('okey_db_expense_types', JSON.stringify(types));
+  saveToFirestore('okey_db_expense_types', types);
 }
 
 // APPROVAL LEVELS MASTER DATA
 export function getDbApprovalLevels(): ApprovalLevelMaster[] {
-  const data = localStorage.getItem('okey_db_approval_levels');
-  if (data) return JSON.parse(data);
-  localStorage.setItem('okey_db_approval_levels', JSON.stringify(INITIAL_APPROVAL_LEVELS));
+  const data = getFromCache('okey_db_approval_levels');
+  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
+  saveToFirestore('okey_db_approval_levels', INITIAL_APPROVAL_LEVELS);
   return INITIAL_APPROVAL_LEVELS;
 }
 
 export function saveDbApprovalLevels(levels: ApprovalLevelMaster[]) {
-  localStorage.setItem('okey_db_approval_levels', JSON.stringify(levels));
+  saveToFirestore('okey_db_approval_levels', levels);
 }
 
 // ROLES MASTER DATA
 export function getDbRoles(): RoleMaster[] {
-  const data = localStorage.getItem('okey_db_roles_master');
-  if (data) return JSON.parse(data);
-  localStorage.setItem('okey_db_roles_master', JSON.stringify(INITIAL_ROLES_MASTER));
+  const data = getFromCache('okey_db_roles_master');
+  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
+  saveToFirestore('okey_db_roles_master', INITIAL_ROLES_MASTER);
   return INITIAL_ROLES_MASTER;
 }
 
 export function saveDbRoles(roles: RoleMaster[]) {
-  localStorage.setItem('okey_db_roles_master', JSON.stringify(roles));
+  saveToFirestore('okey_db_roles_master', roles);
 }
 
 // PDF TEMPLATES MASTER DATA
 export function getDbPdfTemplates(): PdfTemplateMaster[] {
-  const data = localStorage.getItem('okey_db_pdf_templates');
-  if (data) return JSON.parse(data);
-  localStorage.setItem('okey_db_pdf_templates', JSON.stringify(INITIAL_PDF_TEMPLATES));
+  const data = getFromCache('okey_db_pdf_templates');
+  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
+  saveToFirestore('okey_db_pdf_templates', INITIAL_PDF_TEMPLATES);
   return INITIAL_PDF_TEMPLATES;
 }
 
 export function saveDbPdfTemplates(templates: PdfTemplateMaster[]) {
-  localStorage.setItem('okey_db_pdf_templates', JSON.stringify(templates));
+  saveToFirestore('okey_db_pdf_templates', templates);
 }
 
 // REALTIME BUDGETS MONITORING ENGINE (Requirement 8)
 export function getRealtimeBudgets(): DepartmentBudget[] {
   const depts = getDbDepartments();
-  const requests: ExpenseRequest[] = JSON.parse(localStorage.getItem('okey_requests') || '[]');
+  const requests: ExpenseRequest[] = getFromCache('okey_requests', []);
   
   return depts.map(d => {
     // filter requests for this department
@@ -787,15 +788,15 @@ export function getRealtimeBudgets(): DepartmentBudget[] {
 
 // ENTERPRISE AUDIT LOGGING ENGINE (Requirement 14)
 export function getDbEnterpriseAuditLogs(): EnterpriseAuditLog[] {
-  const data = localStorage.getItem('okey_db_enterprise_audit_logs');
-  if (data) return JSON.parse(data);
+  const data = getFromCache('okey_db_enterprise_audit_logs');
+  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
   const initial: EnterpriseAuditLog[] = [];
-  localStorage.setItem('okey_db_enterprise_audit_logs', JSON.stringify(initial));
+  saveToFirestore('okey_db_enterprise_audit_logs', initial);
   return initial;
 }
 
 export function saveDbEnterpriseAuditLogs(logs: EnterpriseAuditLog[]) {
-  localStorage.setItem('okey_db_enterprise_audit_logs', JSON.stringify(logs));
+  saveToFirestore('okey_db_enterprise_audit_logs', logs);
 }
 
 export function addEnterpriseAuditLog(
@@ -890,10 +891,10 @@ export function addEnterpriseAuditLog(
 
 // REPLACEMENT RECEIPT POLICY ENGINE (Requirement 9)
 export function getDbReplacementPolicy(): ReplacementPolicy {
-  const policy = localStorage.getItem('okey_db_replacement_policy');
+  const policy = getFromCache('okey_db_replacement_policy');
   if (policy) {
     try {
-      return JSON.parse(policy);
+      return (typeof policy === 'string' ? JSON.parse(policy) : policy);
     } catch (e) {
       console.error("Error parsing replacement policy, resetting", e);
     }
@@ -905,12 +906,12 @@ export function getDbReplacementPolicy(): ReplacementPolicy {
     forbiddenCategories: ['equipment', 'software', 'training', 'marketing'],
     additionalApprovers: ['user-4']
   };
-  localStorage.setItem('okey_db_replacement_policy', JSON.stringify(initial));
+  saveToFirestore('okey_db_replacement_policy', initial);
   return initial;
 }
 
 export function saveDbReplacementPolicy(policy: ReplacementPolicy) {
-  localStorage.setItem('okey_db_replacement_policy', JSON.stringify(policy));
+  saveToFirestore('okey_db_replacement_policy', policy);
 }
 
 // Helper to get real photo-realistic receipt images for any request (No mock text/blue-band cards)
@@ -1010,10 +1011,10 @@ export function generateDocumentId(
   // Also check database if current list is empty
   let requestsList = currentRequests;
   if (!requestsList || requestsList.length === 0) {
-    const dbRequestsStr = localStorage.getItem('okey_requests');
+    const dbRequestsStr = getFromCache('okey_requests');
     if (dbRequestsStr) {
       try {
-        requestsList = JSON.parse(dbRequestsStr);
+        requestsList = (typeof dbRequestsStr === 'string' ? JSON.parse(dbRequestsStr) : dbRequestsStr);
       } catch (e) {
         requestsList = [];
       }
@@ -1038,10 +1039,10 @@ export function generateDocumentId(
 }
 
 export function getDbRequests(): ExpenseRequest[] {
-  const data = localStorage.getItem('okey_requests');
+  const data = getFromCache('okey_requests');
   if (data) {
     try {
-      return JSON.parse(data);
+      return (typeof data === 'string' ? JSON.parse(data) : data);
     } catch (e) {
       return [];
     }
@@ -1146,32 +1147,32 @@ export function getClearingStatusInfo(req: ExpenseRequest): { label: string; col
 
 // Notifications
 export function getDbNotifications(userId: string): any[] {
-  const allNotifications = JSON.parse(localStorage.getItem('okey_db_notifications') || '[]');
+  const allNotifications = getFromCache('okey_db_notifications', []);
   return allNotifications.filter((n: any) => n.userId === userId || n.userId === 'all');
 }
 
 export function addDbNotification(notification: any) {
-  const allNotifications = JSON.parse(localStorage.getItem('okey_db_notifications') || '[]');
+  const allNotifications = getFromCache('okey_db_notifications', []);
   allNotifications.unshift({ ...notification, id: generateDocumentId('NOTIFY', new Date().toISOString(), []), createdAt: new Date().toISOString() });
-  localStorage.setItem('okey_db_notifications', JSON.stringify(allNotifications));
+  saveToFirestore('okey_db_notifications', allNotifications);
 }
 
 export function markNotificationAsRead(id: string) {
-  const allNotifications = JSON.parse(localStorage.getItem('okey_db_notifications') || '[]');
+  const allNotifications = getFromCache('okey_db_notifications', []);
   const updated = allNotifications.map((n: any) => n.id === id ? { ...n, isRead: true } : n);
-  localStorage.setItem('okey_db_notifications', JSON.stringify(updated));
+  saveToFirestore('okey_db_notifications', updated);
 }
 
 export function markAllNotificationsAsRead(userId: string) {
-  const allNotifications = JSON.parse(localStorage.getItem('okey_db_notifications') || '[]');
+  const allNotifications = getFromCache('okey_db_notifications', []);
   const updated = allNotifications.map((n: any) => (n.userId === userId || n.userId === 'all') ? { ...n, isRead: true } : n);
-  localStorage.setItem('okey_db_notifications', JSON.stringify(updated));
+  saveToFirestore('okey_db_notifications', updated);
 }
 
 export function syncRealNotifications(currentUser: any, requests: any[]) {
   if (!currentUser) return;
   const userId = currentUser.user_id;
-  const allNotifications = JSON.parse(localStorage.getItem('okey_db_notifications') || '[]');
+  const allNotifications = getFromCache('okey_db_notifications', []);
   let modified = false;
 
   requests.forEach(req => {
@@ -1272,6 +1273,6 @@ export function syncRealNotifications(currentUser: any, requests: any[]) {
   }
 
   if (modified) {
-    localStorage.setItem('okey_db_notifications', JSON.stringify(allNotifications));
+    saveToFirestore('okey_db_notifications', allNotifications);
   }
 }

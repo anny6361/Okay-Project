@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { openPdfPreview } from '../lib/pdf-preview';
 import { 
   Search, 
   Filter, 
@@ -133,11 +134,15 @@ export default function HistoryAndReportsView({ requests, onSelectRequest, curre
     const element = document.getElementById('corporate-report-printable-area');
     if (!element) return;
     
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('ไม่สามารถเปิดหน้าต่างใหม่ได้ กรุณาปิด Pop-up Blocker');
-      return;
-    }
+    const printWindow: any = {
+      document: {
+        write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
+        close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
+      },
+      print: () => {},
+      close: () => {}
+    };
+    
 
     const reportHtml = element.innerHTML; // get the inner HTML of the report
 

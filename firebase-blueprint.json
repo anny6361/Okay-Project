@@ -1,0 +1,70 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and auth info",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "username": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "department": { "type": "string" },
+        "approval_level": { "type": "string" },
+        "email": { "type": "string" },
+        "is_active": { "type": "boolean" },
+        "deleted": { "type": "boolean" }
+      }
+    },
+    "Request": {
+      "title": "Request",
+      "description": "Expense or Advance request",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "requester_id": { "type": "string" },
+        "expense_type": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "requests/{requestId}": {
+      "schema": "Request",
+      "description": "All requests"
+    },
+    "departments/{departmentId}": {
+      "schema": "Department",
+      "description": "Departments"
+    },
+    "notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User notifications"
+    },
+    "auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System audit logs"
+    },
+    "companySettings/{settingId}": {
+      "schema": "CompanySetting",
+      "description": "Company settings"
+    },
+    "masterData/{dataId}": {
+      "schema": "MasterData",
+      "description": "Master data (categories, etc.)"
+    },
+    "refunds/{refundId}": {
+      "schema": "Refund",
+      "description": "Refunds and deductions"
+    },
+    "deductions/{deductionId}": {
+      "schema": "Deduction",
+      "description": "Payroll deductions"
+    }
+  }
+}

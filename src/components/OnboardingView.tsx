@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { uploadToStorage } from '../lib/storage';
 import { 
   UserPlus, 
   Check, 
@@ -231,12 +232,12 @@ export default function OnboardingView({ onRefreshData, currentUser, setCurrentU
     setSignaturePoints(prev => [...prev, point]);
   };
 
-  const stopDrawing = () => {
+  const stopDrawing = async () => {
     if (!isDrawing) return;
     setIsDrawing(false);
     const canvas = canvasRef.current;
     if (canvas) {
-      const dataUrl = canvas.toDataURL('image/png');
+      const dataUrl = await uploadToStorage('signatures/' + Date.now() + '.png', canvas.toDataURL('image/png'));
       setSignatureImage(dataUrl);
     }
   };
@@ -326,13 +327,13 @@ export default function OnboardingView({ onRefreshData, currentUser, setCurrentU
   const handleProfilePicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setProfilePic(event.target.result as string);
+      uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
+      
+        if (dataUrl) {
+          setProfilePic(dataUrl);
         }
-      };
-      reader.readAsDataURL(file);
+      
+    });
     }
   };
 

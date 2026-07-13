@@ -1256,7 +1256,7 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
             />
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 print:grid-cols-2 print:gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 print:block print:space-y-6">
           
           {/* Refunds Panel (Unused Advance - Spent < Advance) */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 shadow-sm space-y-4 print:border-none print:shadow-none print:p-0">
@@ -1397,6 +1397,20 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
                 ))}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Print Signatures */}
+        <div className="hidden print:grid grid-cols-2 gap-8 mt-16 pt-8 text-center" style={{ pageBreakInside: 'avoid' }}>
+          <div>
+            <div className="h-12 border-b border-dashed border-slate-400 mb-2 w-3/4 mx-auto"></div>
+            <p className="font-bold text-xs text-black">ผู้ตรวจสอบ (Checked By)</p>
+            <p className="text-[10px] text-slate-500 mt-1">วันที่ (Date): ____/____/______</p>
+          </div>
+          <div>
+            <div className="h-12 border-b border-dashed border-slate-400 mb-2 w-3/4 mx-auto"></div>
+            <p className="font-bold text-xs text-black">ผู้อนุมัติ (Approved By)</p>
+            <p className="text-[10px] text-slate-500 mt-1">วันที่ (Date): ____/____/______</p>
           </div>
         </div>
       </div>

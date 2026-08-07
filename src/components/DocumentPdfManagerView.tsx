@@ -817,7 +817,7 @@ export default function DocumentPdfManagerView() {
                 </tr>
                 <tr>
                   <td class="meta-label" style="background-color: #f0fdf4; color: #15803d;">ผู้อนุมัติใบ Advance (Approver)</td>
-                  <td colspan="3">${matchedAdvance?.approvalHistory?.filter(h => h.status === 'approved' || h.status === 'Approved').map(h => h.approverName).join(', ') || 'สิรินธร รัตนสกุล (CFO), ณภัทร วงศ์ษา'}</td>
+                  <td colspan="3">${matchedAdvance?.approvalHistory?.filter(h => h.status === 'approved' || h.status === 'Approved').map(h => h.approverName).join(', ') || 'ผู้ดูแลระบบ / ผู้อนุมัติ'}</td>
                 </tr>
                 <tr>
                   <td class="meta-label" style="background-color: #fdf2f8; color: #9d174d;">ยอดใช้จ่ายจริง (Actual Spent)</td>

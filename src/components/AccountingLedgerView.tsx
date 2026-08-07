@@ -248,13 +248,13 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
     const requesterRole = requesterUser?.role || req?.employeeRole || 'พนักงาน';
     const department = requesterUser?.department || req?.department || doc.department || 'สำนักงานส่วนกลาง';
 
-    const auditorUser = dbUsers.find(u => u.name.includes('สิรินธร') || u.name === doc.approved_by);
+    const auditorUser = dbUsers.find(u => u.name === doc.approved_by || u.role === 'Administrator');
     const auditorSig = auditorUser?.signatureUrl;
-    const auditorName = auditorUser?.name || doc.approved_by || 'สิรินธร รัตนสกุล (CFO)';
+    const auditorName = auditorUser?.name || doc.approved_by || 'ผู้ตรวจสอบบัญชี';
 
     const approvedSteps = req?.approvalHistory?.filter((step: any) => step.status === 'approved' || step.status === 'Approved') || [];
     const finalApproverStep = approvedSteps[approvedSteps.length - 1] || null;
-    const approverName = finalApproverStep ? finalApproverStep.approverName : (doc.approved_by || 'สิรินธร รัตนสกุล (CFO)');
+    const approverName = finalApproverStep ? finalApproverStep.approverName : (doc.approved_by || 'ผู้อนุมัติเอกสาร');
     const approverUser = dbUsers.find(u => u.name === approverName || u.name.includes(approverName));
     const approverSig = approverUser?.signatureUrl;
 
@@ -1706,15 +1706,15 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
         const requesterUser = dbUsers.find(u => u.name === requesterName || u.name.includes(requesterName));
         const requesterSig = requesterUser?.signatureUrl;
 
-        // Resolve auditor details (สิรินธร)
-        const auditorUser = dbUsers.find(u => u.name.includes('สิรินธร') || u.name === selectedDoc.approved_by);
+        // Resolve auditor details
+        const auditorUser = dbUsers.find(u => u.name === selectedDoc.approved_by || u.role === 'Administrator');
         const auditorSig = auditorUser?.signatureUrl;
-        const auditorName = auditorUser?.name || selectedDoc.approved_by || 'สิรินธร รัตนสกุล (CFO)';
+        const auditorName = auditorUser?.name || selectedDoc.approved_by || 'ผู้ตรวจสอบบัญชี';
 
         // Resolve approver details
         const approvedSteps = associatedRequest?.approvalHistory?.filter((step: any) => step.status === 'approved' || step.status === 'Approved') || [];
         const finalApproverStep = approvedSteps[approvedSteps.length - 1] || null;
-        const approverName = finalApproverStep ? finalApproverStep.approverName : (selectedDoc.approved_by || 'สิรินธร รัตนสกุล (CFO)');
+        const approverName = finalApproverStep ? finalApproverStep.approverName : (selectedDoc.approved_by || 'ผู้อนุมัติเอกสาร');
         const approverRole = finalApproverStep ? finalApproverStep.approverRole : 'ผู้อนุมัติ';
         const approverUser = dbUsers.find(u => u.name === approverName || u.name.includes(approverName));
         const approverSig = approverUser?.signatureUrl;

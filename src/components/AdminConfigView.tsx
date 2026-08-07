@@ -1450,11 +1450,23 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
-      
-                              setLogoUrl(dataUrl);
-                            
-    });
+                            // Direct preview first
+                            const reader = new FileReader();
+                            reader.onload = (evt) => {
+                              if (evt.target?.result) {
+                                setLogoUrl(evt.target.result as string);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+
+                            // Also sync to storage
+                            uploadToStorage('uploads/' + Date.now() + '_' + file.name, file)
+                              .then((dataUrl) => {
+                                if (dataUrl) setLogoUrl(dataUrl);
+                              })
+                              .catch((err) => {
+                                console.warn('Logo storage upload warning, using local preview:', err);
+                              });
                           }
                         }}
                         className="hidden"
@@ -1463,7 +1475,7 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
                         type="button"
                         disabled={!isAdmin}
                         onClick={() => document.getElementById('logo-upload-input')?.click()}
-                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-250 dark:bg-slate-750 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-250 text-xs font-bold rounded-lg transition-all border border-slate-200 dark:border-slate-650 cursor-pointer"
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-750 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg transition-all border border-slate-200 dark:border-slate-650 cursor-pointer"
                       >
                         {logoUrl ? 'เปลี่ยนรูปโลโก้' : 'เลือกไฟล์โลโก้'}
                       </button>

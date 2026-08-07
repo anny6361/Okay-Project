@@ -16,7 +16,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { UserProfile } from '../types';
-import { getDbUsers, saveDbUsers, hashPassword, addEnterpriseAuditLog } from '../data/db';
+import { getDbUsers, saveDbUsers, hashPassword, addEnterpriseAuditLog, THAI_PROVINCES } from '../data/db';
 
 interface MyProfileViewProps {
   currentUser: UserProfile;
@@ -517,7 +517,7 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
                   onChange={e => setProvince(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-500"
                 >
-                  {['กรุงเทพมหานคร', 'นนทบุรี', 'ปทุมธานี', 'สมุทรปราการ', 'นครปฐม', 'สมุทรสาคร', 'เชียงใหม่', 'ขอนแก่น', 'ชลบุรี', 'นครราชสีมา', 'ภูเก็ต', 'สงขลา', 'ระยอง', 'ประจวบคีรีขันธ์'].map(p => (
+                  {THAI_PROVINCES.map(p => (
                     <option key={p} value={p}>{p}</option>
                   ))}
                 </select>

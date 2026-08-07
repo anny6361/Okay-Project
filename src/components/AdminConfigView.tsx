@@ -46,7 +46,8 @@ import {
   saveDbReplacementPolicy,
   calculateAge,
   validateThaiNationalID,
-  hashPassword
+  hashPassword,
+  THAI_PROVINCES
 } from '../data/db';
 
 import { exportUsersToExcel } from '../utils/excelExport';
@@ -2745,7 +2746,7 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
                       onChange={(e) => setUProvince(e.target.value)}
                       className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none"
                     >
-                      {['กรุงเทพมหานคร', 'นนทบุรี', 'ปทุมธานี', 'สมุทรปราการ', 'นครปฐม', 'สมุทรสาคร', 'เชียงใหม่', 'ขอนแก่น', 'ชลบุรี', 'นครราชสีมา', 'ภูเก็ต', 'สงขลา', 'ระยอง', 'ประจวบคีรีขันธ์'].map(p => (
+                      {THAI_PROVINCES.map(p => (
                         <option key={p} value={p}>{p}</option>
                       ))}
                     </select>

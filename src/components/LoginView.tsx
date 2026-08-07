@@ -26,7 +26,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { UserProfile, Department } from '../types';
-import { getDbUsers, saveDbUsers, getDbDepartments, hashPassword, comparePassword, validateThaiNationalID, calculateAge, addEnterpriseAuditLog } from '../data/db';
+import { getDbUsers, saveDbUsers, getDbDepartments, hashPassword, comparePassword, validateThaiNationalID, calculateAge, addEnterpriseAuditLog, THAI_PROVINCES } from '../data/db';
 import { auth, db } from '../firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
@@ -1234,16 +1234,30 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               </div>
             </div>
 
-            {/* Address */}
-            <div className="space-y-1">
-              <label className="font-bold text-slate-400 block text-xs">ที่อยู่ปัจจุบันสำหรับการส่งเอกสาร <span className="text-slate-500 dark:text-slate-400">(ถ้ามี)</span></label>
-              <textarea
-                rows={2}
-                placeholder="เช่น บ้านเลขที่ 12/3 ถนนสุขุมวิท..."
-                value={regAddress || ''}
-                onChange={e => setRegAddress(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-950 rounded-lg border border-slate-800 text-white placeholder-slate-700 text-xs focus:ring-1 focus:ring-primary-500"
-              />
+            {/* Address & Province */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2 space-y-1">
+                <label className="font-bold text-slate-400 block text-xs">ที่อยู่ปัจจุบันสำหรับการส่งเอกสาร <span className="text-slate-500 dark:text-slate-400">(ถ้ามี)</span></label>
+                <textarea
+                  rows={2}
+                  placeholder="เช่น บ้านเลขที่ 12/3 ถนนสุขุมวิท..."
+                  value={regAddress || ''}
+                  onChange={e => setRegAddress(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 rounded-lg border border-slate-800 text-white placeholder-slate-700 text-xs focus:ring-1 focus:ring-primary-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="font-bold text-slate-400 block text-xs">จังหวัดที่พำนัก <span className="text-rose-500">*</span></label>
+                <select
+                  value={regProvince}
+                  onChange={e => setRegProvince(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 rounded-lg border border-slate-800 text-white text-xs"
+                >
+                  {THAI_PROVINCES.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div className="space-y-1">

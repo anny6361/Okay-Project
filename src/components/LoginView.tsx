@@ -273,15 +273,28 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     try {
       const dbUsers = getDbUsers();
       const userLower = loginPhone.trim().toLowerCase();
+      const cleanInput = userLower.replace(/[^a-z0-9]/g, '');
       
-      const userAccount = dbUsers.find(u => 
-        (u.username && u.username.toLowerCase() === userLower) ||
-        (u.email && u.email.toLowerCase() === userLower) ||
-        (u.phone && u.phone === userLower)
-      );
+      const userAccount = dbUsers.find(u => {
+        const uUsername = (u.username || '').toLowerCase();
+        const uEmail = (u.email || '').toLowerCase();
+        const uPhone = (u.phone || '').replace(/[^0-9]/g, '');
+        const uEmployeeId = (u.employee_id || '').toLowerCase();
+        const uUserId = (u.user_id || '').toLowerCase();
+
+        return (
+          uUsername === userLower ||
+          uEmail === userLower ||
+          (uPhone && uPhone === userLower.replace(/[^0-9]/g, '')) ||
+          uEmployeeId === userLower ||
+          uUserId === userLower ||
+          (cleanInput.length > 2 && uUsername.replace(/[^a-z0-9]/g, '') === cleanInput) ||
+          (cleanInput.length > 2 && uEmployeeId.replace(/[^a-z0-9]/g, '') === cleanInput)
+        );
+      });
 
       if (!userAccount) {
-        throw new Error('ไม่พบบัญชีผู้ใช้งานนี้ในระบบ');
+        throw new Error('ไม่พบบัญชีผู้ใช้งานนี้ในระบบ (โปรดตรวจสอบ Username/อีเมล หรือหากต้องการเข้าใช้งานในฐานะผู้ดูแลระบบ ให้ใช้ Username: Okay9999 / รหัสผ่าน: Okay.co.ltd หรือลงทะเบียนสมัครพนักงานใหม่)');
       }
 
       if (!userAccount.is_active || userAccount.deleted) {

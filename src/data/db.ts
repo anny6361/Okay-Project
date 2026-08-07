@@ -249,13 +249,7 @@ export const INITIAL_USERS: UserProfile[] = [
   }
 ];
 
-export const INITIAL_DEPARTMENTS: Department[] = [
-  { department_id: 'dept-1', department_name: 'ไอที (IT)', head_of_department: 'สมชาย รักดี', budget: 500000, status: 'active' },
-  { department_id: 'dept-2', department_name: 'ฝ่ายขาย (Sales)', head_of_department: 'ณภัทร วงศ์ษา', budget: 350000, status: 'active' },
-  { department_id: 'dept-3', department_name: 'การตลาด (Marketing)', head_of_department: 'วิลาสินี มีโชค', budget: 600000, status: 'active' },
-  { department_id: 'dept-4', department_name: 'บัญชีและการเงิน (Finance)', head_of_department: 'มนัญญา ใจสู้', budget: 150000, status: 'active' },
-  { department_id: 'dept-5', department_name: 'ทรัพยากรบุคคล (HR)', head_of_department: 'รุ่งโรจน์ สุวรรณรัตน์', budget: 200000, status: 'active' }
-];
+export const INITIAL_DEPARTMENTS: Department[] = [];
 
 export const INITIAL_RULES: ApprovalRule[] = [];
 

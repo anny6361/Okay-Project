@@ -159,42 +159,7 @@ export default function BackupRestoreView({ currentUser, onRefreshData, themeCol
   }, []);
 
   const seedInitialBackups = () => {
-    const dummy: BackupVersion[] = [
-      {
-        id: 'BACKUP-AUTO-DAILY-1',
-        timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
-        operatorId: 'System',
-        operatorName: 'System Scheduler',
-        operatorRole: 'System Agent',
-        fileName: 'okey_auto_backup_daily_3am.zip',
-        fileSize: '342 KB',
-        version: '2.1.0',
-        checksum: 'CS-8E9F1A42',
-        recordCount: 420,
-        fileCount: 45,
-        status: 'success',
-        isEncrypted: false,
-        cloudSyncStatus: 'Synced (Drive)',
-        healthStatus: 'Healthy'
-      },
-      {
-        id: 'BACKUP-MANUAL-PREUPGRADE',
-        timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-        operatorId: 'user-admin',
-        operatorName: 'สิรินธร รัตนสกุล (Admin)',
-        operatorRole: 'Administrator',
-        fileName: 'okey_pre_upgrade_backup_v2.0.zip',
-        fileSize: '310 KB',
-        version: '2.0.0',
-        checksum: 'CS-2C5F4D12',
-        recordCount: 380,
-        fileCount: 32,
-        status: 'success',
-        isEncrypted: true,
-        cloudSyncStatus: 'Synced (GCS)',
-        healthStatus: 'Healthy'
-      }
-    ];
+    const dummy: BackupVersion[] = [];
     localStorage.setItem('okey_db_backup_versions', JSON.stringify(dummy));
     setBackupVersions(dummy);
   };

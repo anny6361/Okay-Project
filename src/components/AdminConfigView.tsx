@@ -47,7 +47,7 @@ import {
   validateThaiNationalID,
   hashPassword
 } from '../data/db';
-import { DEPARTMENTS } from '../data/masterData';
+
 import { exportUsersToExcel } from '../utils/excelExport';
 
 interface AdminConfigViewProps {

@@ -12,7 +12,8 @@ import {
   Calendar
 } from 'lucide-react';
 import { ExpenseRequest, ExpenseCategory, UserProfile } from '../types';
-import { CATEGORIES_CONFIG, DEPARTMENTS } from '../data/masterData';
+import { CATEGORIES_CONFIG } from '../data/masterData';
+import { getDbDepartments } from '../data/db';
 import { getClearingStatusInfo, getDbCompanyData } from '../data/db';
 import { CompanyLetterhead } from './CompanyLetterhead';
 
@@ -289,7 +290,7 @@ export default function HistoryAndReportsView({ requests, onSelectRequest, curre
                 className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-hidden focus:ring-1 focus:ring-primary-500"
               >
                 <option value="All">ทุกแผนก (ทั้งหมด)</option>
-                {DEPARTMENTS.map(d => (
+                {departmentsList.map(d => (
                   <option key={d} value={d}>{d}</option>
                 ))}
               </select>

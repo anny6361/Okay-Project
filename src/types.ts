@@ -196,6 +196,7 @@ export interface UserProfile {
   lastName?: string;          // นามสกุล
   nickname?: string;           // ชื่อเล่น
   idCard?: string;            // เลขบัตรประชาชน 13 หลัก
+  idCardImageUrl?: string;    // รูปภาพบัตรประชาชน
   birthDate?: string;         // วันเดือนปีเกิด YYYY-MM-DD
   age?: number;               // อายุ
   gender?: string;            // เพศ

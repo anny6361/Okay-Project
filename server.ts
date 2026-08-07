@@ -184,6 +184,69 @@ app.post("/api/ocr", async (req, res) => {
   }
 });
 
+// API endpoint for Thai ID Card OCR scanning
+app.post("/api/idcard-ocr", async (req, res) => {
+  try {
+    let { fileData, mimeType } = req.body;
+    if (!fileData || !mimeType) {
+      return res.status(400).json({ success: false, error: "Missing fileData or mimeType" });
+    }
+
+    if (fileData.includes(",")) {
+      fileData = fileData.split(",")[1];
+    }
+
+    const ai = getGeminiClient();
+
+    const filePart = {
+      inlineData: {
+        mimeType,
+        data: fileData
+      }
+    };
+
+    const promptPart = {
+      text: "คุณเป็นระบบ AI อ่านและสกัดข้อมูลจากบัตรประจำตัวประชาชนไทย (Thai National ID Card Scanner) ให้อ่านไฟล์ภาพบัตรประชาชนและสกัดข้อมูลดังนี้:\n- idCard: เลขประจำตัวประชาชน 13 หลัก (ตัวเลขล้วน)\n- title: คำนำหน้าชื่อ (นาย, นาง, นางสาว)\n- firstName: ชื่อจริงภาษาไทย\n- lastName: นามสกุลภาษาไทย\n- birthDate: วันเกิด ค.ศ. รูปแบบ YYYY-MM-DD (หากในบัตรเป็น พ.ศ. ให้แปลงเป็น ค.ศ. โดยลบ 543 เช่น พ.ศ. 2535 -> 1992)\n- gender: เพศ โดยใช้ 'male' หรือ 'female'\n- address: ที่อยู่ตามบัตรประชาชน"
+    };
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: { parts: [filePart, promptPart] },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            idCard: { type: Type.STRING, description: "เลขบัตรประจำตัวประชาชน 13 หลัก" },
+            title: { type: Type.STRING, description: "คำนำหน้าชื่อ เช่น นาย, นาง, นางสาว" },
+            firstName: { type: Type.STRING, description: "ชื่อจริงภาษาไทย" },
+            lastName: { type: Type.STRING, description: "นามสกุลภาษาไทย" },
+            birthDate: { type: Type.STRING, description: "วันเกิด ค.ศ. YYYY-MM-DD" },
+            gender: { type: Type.STRING, description: "เพศ male หรือ female" },
+            address: { type: Type.STRING, description: "ที่อยู่ตามบัตรประชาชน" }
+          },
+          required: ["idCard", "firstName", "lastName"]
+        }
+      }
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("AI did not return any readable text from ID card image.");
+    }
+
+    const parsedData = JSON.parse(text);
+    return res.json({ success: true, data: parsedData });
+
+  } catch (error: any) {
+    console.error("ID Card OCR error:", error);
+    return res.status(500).json({ 
+      success: false, 
+      error: error.message || "เกิดข้อผิดพลาดในการอ่านบัตรประชาชนด้วย AI" 
+    });
+  }
+});
+
 // Setup Vite or static serving
 async function initServer() {
   if (!isProd) {

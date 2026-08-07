@@ -86,6 +86,9 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regProfilePic, setRegProfilePic] = useState<string>('');
+  const [regIdCardImage, setRegIdCardImage] = useState<string>('');
+  const [isScanningIdCard, setIsScanningIdCard] = useState<boolean>(false);
+  const [scanStatusMsg, setScanStatusMsg] = useState<string>('');
   const [usernameStatus, setUsernameStatus] = useState<'empty' | 'available' | 'taken' | 'invalid_format'>('empty');
 
   // Signature Canvas State
@@ -172,11 +175,76 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     const file = e.target.files?.[0];
     if (file) {
       uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
-      
         setRegProfilePic(dataUrl);
-      
-    });
+      });
     }
+  };
+
+  // ID Card Upload & AI Scan Handler
+  const handleIdCardUploadAndScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 1. Show local data preview immediately
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const dataUrl = evt.target?.result as string;
+      if (!dataUrl) return;
+      setRegIdCardImage(dataUrl);
+
+      // 2. Trigger AI OCR scanning
+      setIsScanningIdCard(true);
+      setScanStatusMsg('🤖 AI กำลังประมวลผลอ่านข้อมูลบัตรประชาชน...');
+
+      try {
+        const mimeType = file.type || 'image/jpeg';
+        const base64Data = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+
+        const res = await fetch('/api/idcard-ocr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileData: base64Data, mimeType })
+        });
+
+        const json = await res.json();
+        if (json.success && json.data) {
+          const d = json.data;
+          if (d.idCard) setRegIdCard(String(d.idCard).replace(/\D/g, ''));
+          if (d.title) {
+            const cleanTitle = d.title.trim();
+            if (cleanTitle.includes('นาย') && !cleanTitle.includes('นางสาว')) setRegTitle('นาย');
+            else if (cleanTitle.includes('นางสาว')) setRegTitle('นางสาว');
+            else if (cleanTitle.includes('นาง')) setRegTitle('นาง');
+          }
+          if (d.firstName) setRegFirstName(d.firstName.trim());
+          if (d.lastName) setRegLastName(d.lastName.trim());
+          if (d.birthDate) setRegBirthDate(d.birthDate);
+          if (d.gender) {
+            const g = d.gender.toLowerCase();
+            if (g === 'male' || g === 'female') setRegGender(g);
+          }
+          if (d.address) setRegAddress(d.address.trim());
+
+          setScanStatusMsg('✨ AI อ่านและเติมข้อมูลบัตรประชาชนสำเร็จเรียบร้อยแล้ว!');
+        } else {
+          setScanStatusMsg('⚠️ AI ไม่สามารถสกัดข้อมูลจากบัตรได้ กรุณากรอกข้อมูลในแบบฟอร์มด้านล่าง');
+        }
+      } catch (err) {
+        console.error('ID Card OCR error:', err);
+        setScanStatusMsg('⚠️ เกิดข้อผิดพลาดในการประมวลผล AI OCR');
+      } finally {
+        setIsScanningIdCard(false);
+      }
+
+      // Also sync to cloud storage
+      try {
+        const storageUrl = await uploadToStorage('idcards/' + Date.now() + '_' + file.name, file);
+        if (storageUrl) setRegIdCardImage(storageUrl);
+      } catch (err) {
+        console.warn('ID Card storage upload warning:', err);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   // Signature Canvas Drawing Logic
@@ -415,9 +483,6 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
     if (!regPhone.trim()) {
       errors.regPhone = 'กรุณากรอกเบอร์โทรศัพท์';
     }
-    if (!regPosition.trim()) {
-      errors.regPosition = 'กรุณากรอกตำแหน่งงาน';
-    }
     if (!regPassword || regPassword.length < 6) {
       errors.regPassword = 'รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร';
     }
@@ -487,8 +552,8 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       email: regEmail || `${regUsername.toLowerCase()}@okey.com`,
       phone: regPhone,
       password: hashPassword(regPassword), // HASH SECURELY
-      department: regDepartment,
-      position: regPosition,
+      department: regDepartment || (departments.length > 0 ? departments[0].department_name : 'สำนักงานส่วนกลาง'),
+      position: regPosition || 'พนักงาน',
       is_active: true,
       approval_level: 'Level 1', // Automatic Role assignment to Employee (Level 1)
       signatureUrl: signatureImage,
@@ -500,12 +565,13 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       title: regTitle,
       nickname: regNickname,
       idCard: cleanIdCard,
+      idCardImageUrl: regIdCardImage || undefined,
       birthDate: regBirthDate,
       age: calculateAge(regBirthDate),
       gender: regGender,
       address: regAddress,
-      province: regProvince,
-      electricityRegion: regElectricityRegion,
+      province: regProvince || 'กรุงเทพมหานคร',
+      electricityRegion: regElectricityRegion || 'สำนักงานใหญ่ (กฟผ.)',
       startDate: regStartDate,
       employmentStatus: 'active',
       role: 'Employee'
@@ -947,6 +1013,81 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               </p>
             </div>
 
+            {/* AI Thai ID Card Auto-Reader & Storage Box */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-950 to-slate-900 border-2 border-primary-500/40 p-3.5 rounded-2xl shadow-xl space-y-3 relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-primary-500/20 text-primary-400 rounded-xl border border-primary-500/30">
+                    <Sparkles className="h-4 w-4 animate-pulse text-primary-400" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-xs flex items-center gap-1.5">
+                      <span>อัปโหลดบัตรประชาชนสแกนอัตโนมัติด้วย AI</span>
+                      <span className="text-[9px] bg-primary-500/20 text-primary-300 font-extrabold px-2 py-0.5 rounded-full border border-primary-500/30">
+                        AI Scanner
+                      </span>
+                    </h4>
+                    <p className="text-[10px] text-slate-400">
+                      อัปโหลดภาพบัตรประชาชนเพื่อให้ AI ถอดข้อมูลลงแบบฟอร์มให้อัตโนมัติ พร้อมบันทึกภาพบัตรในระบบ
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                {/* ID Card Image Preview */}
+                <div className="sm:col-span-1 h-28 bg-slate-950 rounded-xl border border-slate-800 overflow-hidden relative flex items-center justify-center group">
+                  {regIdCardImage ? (
+                    <>
+                      <img src={regIdCardImage} alt="Thai ID Card" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <label className="p-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg cursor-pointer text-[10px] font-bold">
+                          เปลี่ยนภาพบัตร
+                          <input type="file" accept="image/*" onChange={handleIdCardUploadAndScan} className="hidden" />
+                        </label>
+                      </div>
+                    </>
+                  ) : (
+                    <label className="w-full h-full flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-slate-900/50 transition-colors p-2 text-center">
+                      <Upload className="h-6 w-6 text-primary-400" />
+                      <span className="text-[10px] font-bold text-slate-300">อัปโหลดบัตรประชาชน</span>
+                      <span className="text-[8px] text-slate-500">(รองรับ JPG, PNG)</span>
+                      <input type="file" accept="image/*" onChange={handleIdCardUploadAndScan} className="hidden" />
+                    </label>
+                  )}
+                </div>
+
+                {/* AI Scan Status & Details */}
+                <div className="sm:col-span-2 space-y-2 bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
+                  {isScanningIdCard ? (
+                    <div className="flex items-center gap-2 text-primary-400 font-bold text-xs py-2">
+                      <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin shrink-0" />
+                      <span>{scanStatusMsg || '🤖 AI กำลังอ่านข้อมูลบัตรประชาชน...'}</span>
+                    </div>
+                  ) : scanStatusMsg ? (
+                    <div className="text-[11px] font-medium text-emerald-400 flex items-start gap-1.5">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <span>{scanStatusMsg}</span>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-slate-400 space-y-1">
+                      <p className="font-bold text-slate-300">💡 ข้อมูลที่ AI จะสกัดอ่านให้:</p>
+                      <p>• เลขบัตรประจำตัวประชาชน 13 หลัก</p>
+                      <p>• คำนำหน้า ชื่อ นามสกุล วันเกิด เพศ ที่อยู่</p>
+                    </div>
+                  )}
+
+                  {!regIdCardImage && (
+                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-bold cursor-pointer transition-all shadow-md">
+                      <Upload className="h-3.5 w-3.5" />
+                      <span>เลือกไฟล์ภาพบัตรประชาชนสแกน AI</span>
+                      <input type="file" accept="image/*" onChange={handleIdCardUploadAndScan} className="hidden" />
+                    </label>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Profile image picker & Preview */}
             <div className="flex items-center gap-4 bg-slate-950/40 p-3.5 rounded-2xl border border-slate-800">
               <div className="relative shrink-0">
@@ -1080,7 +1221,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
               </div>
             </div>
 
-            {/* Address & Province */}
+            {/* Address */}
             <div className="space-y-1">
               <label className="font-bold text-slate-400 block text-xs">ที่อยู่ปัจจุบันสำหรับการส่งเอกสาร <span className="text-slate-500 dark:text-slate-400">(ถ้ามี)</span></label>
               <textarea
@@ -1090,43 +1231,6 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
                 onChange={e => setRegAddress(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-950 rounded-lg border border-slate-800 text-white placeholder-slate-700 text-xs focus:ring-1 focus:ring-primary-500"
               />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="font-bold text-slate-400 block text-xs">จังหวัดที่พำนัก <span className="text-rose-500">*</span></label>
-                <select
-                  value={regProvince}
-                  onChange={e => setRegProvince(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 rounded-lg border border-slate-800 text-white text-xs"
-                >
-                  {['กรุงเทพมหานคร', 'นนทบุรี', 'ปทุมธานี', 'สมุทรปราการ', 'นครปฐม', 'สมุทรสาคร', 'เชียงใหม่', 'ขอนแก่น', 'ชลบุรี', 'นครราชสีมา', 'ภูเก็ต', 'สงขลา', 'ระยอง', 'ประจวบคีรีขันธ์'].map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="font-bold text-slate-400 block text-xs">เขตการไฟฟ้าที่รับผิดชอบ <span className="text-rose-500">*</span></label>
-                <select
-                  value={regElectricityRegion}
-                  onChange={e => setRegElectricityRegion(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 rounded-lg border border-slate-800 text-white text-xs"
-                >
-                  <option value="สำนักงานใหญ่ (กฟผ.)">สำนักงานใหญ่ (กฟผ.)</option>
-                  <option value="การไฟฟ้าส่วนภูมิภาค เขต 1 (ภาคเหนือ)">การไฟฟ้าส่วนภูมิภาค เขต 1 (ภาคเหนือ)</option>
-                  <option value="การไฟฟ้าส่วนภูมิภาค เขต 2 (ภาคเหนือ)">การไฟฟ้าส่วนภูมิภาค เขต 2 (ภาคเหนือ)</option>
-                  <option value="การไฟฟ้าส่วนภูมิภาค เขต 3 (ภาคเหนือ)">การไฟฟ้าส่วนภูมิภาค เขต 3 (ภาคเหนือ)</option>
-                  <option value="การไฟฟ้าส่วนภูมิภาค เขต 1 (ภาคกลาง)">การไฟฟ้าส่วนภูมิภาค เขต 1 (ภาคกลาง)</option>
-                  <option value="การไฟฟ้าส่วนภูมิภาค เขต 2 (ภาคกลาง)">การไฟฟ้าส่วนภูมิภาค เขต 2 (ภาคกลาง)</option>
-                  <option value="การไฟฟ้าส่วนภูมิภาค เขต 3 (ภาคกลาง)">การไฟฟ้าส่วนภูมิภาค เขต 3 (ภาคกลาง)</option>
-                  <option value="การไฟฟ้าส่วนภูมิภาค เขต 1 (ภาคตะวันออกเฉียงเหนือ)">การไฟฟ้าส่วนภูมิภาค เขต 1 (ภาคตะวันออกเฉียงเหนือ)</option>
-                  <option value="การไฟฟ้าส่วนภูมิภาค เขต 2 (ภาคตะวันออกเฉียงเหนือ)">การไฟฟ้าส่วนภูมิภาค เขต 2 (ภาคตะวันออกเฉียงเหนือ)</option>
-                  <option value="การไฟฟ้าส่วนภูมิภาค เขต 3 (ภาคตะวันออกเฉียงเหนือ)">การไฟฟ้าส่วนภูมิภาค เขต 3 (ภาคตะวันออกเฉียงเหนือ)</option>
-                  <option value="การไฟฟ้าส่วนภูมิภาค เขต 1 (ภาคใต้)">การไฟฟ้าส่วนภูมิภาค เขต 1 (ภาคใต้)</option>
-                  <option value="การไฟฟ้าส่วนภูมิภาค เขต 2 (ภาคใต้)">การไฟฟ้าส่วนภูมิภาค เขต 2 (ภาคใต้)</option>
-                  <option value="การไฟฟ้าส่วนภูมิภาค เขต 3 (ภาคใต้)">การไฟฟ้าส่วนภูมิภาค เขต 3 (ภาคใต้)</option>
-                </select>
-              </div>
             </div>
 
             <div className="space-y-1">

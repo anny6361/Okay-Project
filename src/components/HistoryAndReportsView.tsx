@@ -35,6 +35,7 @@ export default function HistoryAndReportsView({ requests, onSelectRequest, curre
   const [endDate, setEndDate] = useState('');
 
   const companyData = useMemo(() => getDbCompanyData(), []);
+  const departmentsList = useMemo(() => getDbDepartments().map(d => d.department_name), []);
 
   // Sorting
   const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');

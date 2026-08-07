@@ -288,12 +288,9 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         throw new Error('บัญชีนี้ถูกระงับการใช้งาน โปรดติดต่อผู้ดูแลระบบ');
       }
 
-      if ((userAccount as any).password_hash) {
-        if (!comparePassword(loginPassword, (userAccount as any).password_hash)) {
-          throw new Error('รหัสผ่านไม่ถูกต้อง');
-        }
-      } else {
-        if (loginPassword !== userAccount.password) {
+      const storedPassword = userAccount.password || (userAccount as any).password_hash;
+      if (storedPassword) {
+        if (!comparePassword(loginPassword, storedPassword)) {
           throw new Error('รหัสผ่านไม่ถูกต้อง');
         }
       }
@@ -303,11 +300,16 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       try {
         await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
       } catch (authError: any) {
-        if (authError.code === 'auth/user-not-found' || authError.code === 'auth/invalid-credential') {
-          // Create user in Firebase Auth transparently
-          const userCredential = await createUserWithEmailAndPassword(auth, loginEmail, loginPassword);
-        } else {
-          throw authError;
+        try {
+          if (
+            authError.code === 'auth/user-not-found' || 
+            authError.code === 'auth/invalid-credential' || 
+            authError.code === 'auth/wrong-password'
+          ) {
+            await createUserWithEmailAndPassword(auth, loginEmail, loginPassword);
+          }
+        } catch (fbErr) {
+          console.warn('Firebase Auth background sync error ignored:', fbErr);
         }
       }
 

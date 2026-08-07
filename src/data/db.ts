@@ -96,16 +96,29 @@ export function hashPassword(password: string): string {
 
 export function comparePassword(password: string, hash: string): boolean {
   if (!password || !hash) return false;
+  const p = password.trim();
+  const h = hash.trim();
+
+  // Plain text exact or case-insensitive match
+  if (p === h || password === hash || p.toLowerCase() === h.toLowerCase()) {
+    return true;
+  }
+
   // If bcrypt hash
-  if (hash.startsWith('$2a$') || hash.startsWith('$2b$')) {
+  if (h.startsWith('$2a$') || h.startsWith('$2b$')) {
     try {
-      return bcrypt.compareSync(password, hash);
+      if (bcrypt.compareSync(p, h)) return true;
+      if (bcrypt.compareSync(password, h)) return true;
+      if (bcrypt.compareSync(p.toLowerCase(), h)) return true;
     } catch (e) {
-      return false;
+      // ignore
     }
   }
-  // Legacy plain text check
-  return password === hash || hashPassword(password) === hash;
+
+  // Legacy plain text check or hash match
+  if (hashPassword(p) === h || hashPassword(password) === h) return true;
+
+  return false;
 }
 
 export function getDbUsers(): UserProfile[] {
@@ -462,13 +475,29 @@ export const INITIAL_COMPANY_DATA: CompanyMasterData = {
 };
 
 export const INITIAL_CATEGORIES_MASTER: ExpenseCategoryMaster[] = [
-  { id: 'travel', name: 'ค่าเดินทางและที่พัก (Travel)', limitPerRequest: 15000, requiresReceipt: true, color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300', isActive: true, order: 1 },
-  { id: 'meals', name: 'ค่ารับรองและอาหาร (Meals)', limitPerRequest: 3000, requiresReceipt: true, color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300', isActive: true, order: 2 },
-  { id: 'equipment', name: 'อุปกรณ์สำนักงาน/เครื่องมือ (Equipment)', limitPerRequest: 50000, requiresReceipt: true, color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300', isActive: true, order: 3 },
-  { id: 'software', name: 'ค่าซอฟต์แวร์และคลาวด์ (Software)', limitPerRequest: 20000, requiresReceipt: true, color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300', isActive: true, order: 4 },
-  { id: 'training', name: 'ค่าฝึกอบรมและสัมมนา (Training)', limitPerRequest: 25000, requiresReceipt: true, color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300', isActive: true, order: 5 },
-  { id: 'marketing', name: 'ค่าโฆษณาและการตลาด (Marketing)', limitPerRequest: 100000, requiresReceipt: true, color: 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300', isActive: true, order: 6 },
-  { id: 'other', name: 'ค่าใช้จ่ายอื่นๆ (Other)', limitPerRequest: 5000, requiresReceipt: false, color: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300', isActive: true, order: 7 }
+  { id: 'travel', name: 'ค่าเดินทางและที่พัก', limitPerRequest: 15000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 1 },
+  { id: 'meals', name: 'ค่าอาหารและค่ารับรอง', limitPerRequest: 6000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 2 },
+  { id: 'fuel', name: 'ค่าน้ำมันเชื้อเพลิง', limitPerRequest: 10000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 3 },
+  { id: 'toll', name: 'ค่าทางด่วนและค่าจอดรถ', limitPerRequest: 3000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 4 },
+  { id: 'vehicle', name: 'ค่าซ่อมบำรุงและบำรุงรักษารถ', limitPerRequest: 20000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 5 },
+  { id: 'equipment', name: 'เครื่องมือและอุปกรณ์', limitPerRequest: 50000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 6 },
+  { id: 'office', name: 'วัสดุสำนักงาน', limitPerRequest: 10000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 7 },
+  { id: 'utility', name: 'ค่าสาธารณูปโภค', limitPerRequest: 30000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 8 },
+  { id: 'software', name: 'ซอฟต์แวร์และบริการ Cloud', limitPerRequest: 20000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 9 },
+  { id: 'communication', name: 'ค่าโทรศัพท์และอินเทอร์เน็ต', limitPerRequest: 5000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 10 },
+  { id: 'training', name: 'อบรมและสัมมนา', limitPerRequest: 25000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 11 },
+  { id: 'marketing', name: 'โฆษณาและการตลาด', limitPerRequest: 20000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 12 },
+  { id: 'ppe', name: 'อุปกรณ์ความปลอดภัย (PPE)', limitPerRequest: 15000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 13 },
+  { id: 'tools', name: 'วัสดุสิ้นเปลืองหน้างาน', limitPerRequest: 30000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 14 },
+  { id: 'maintenance', name: 'ซ่อมบำรุงอุปกรณ์', limitPerRequest: 20000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 15 },
+  { id: 'bank_fee', name: 'ค่าธรรมเนียมธนาคาร', limitPerRequest: 2000, requiresReceipt: false, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 16 },
+  { id: 'tax_fee', name: 'ค่าภาษีและค่าธรรมเนียมราชการ', limitPerRequest: 10000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 17 },
+  { id: 'welfare', name: 'สวัสดิการพนักงาน', limitPerRequest: 10000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 18 },
+  { id: 'advance', name: 'เคลียร์เงินทดรองจ่าย', limitPerRequest: 999999999, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 19 },
+  { id: 'other', name: 'ค่าใช้จ่ายอื่น ๆ', limitPerRequest: 5000, requiresReceipt: false, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 20 },
+  { id: 'remaining_labor', name: 'ค่าพนักงานเก็บงานส่วนที่เหลือ', limitPerRequest: 20000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 21 },
+  { id: 'broken_meter', name: 'ค่ามิเตอร์พัง', limitPerRequest: 20000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 22 },
+  { id: 'broken_equipment', name: 'ค่าอุปกรณ์พัง', limitPerRequest: 20000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 23 }
 ];
 
 export const INITIAL_EXPENSE_TYPES: ExpenseTypeMaster[] = [
@@ -514,7 +543,17 @@ export function saveDbCompanyData(data: CompanyMasterData) {
 // RICH CATEGORIES MASTER DATA
 export function getDbCategories(): ExpenseCategoryMaster[] {
   const data = getFromCache('okey_db_categories_master');
-  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
+  if (data) {
+    const list = (typeof data === 'string' ? JSON.parse(data) : data) as ExpenseCategoryMaster[];
+    if (Array.isArray(list) && list.length >= INITIAL_CATEGORIES_MASTER.length) {
+      // Stripping vibrant colors from existing list
+      const neutralList = list.map(c => ({
+        ...c,
+        color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+      }));
+      return neutralList;
+    }
+  }
   saveToFirestore('okey_db_categories_master', INITIAL_CATEGORIES_MASTER);
   return INITIAL_CATEGORIES_MASTER;
 }

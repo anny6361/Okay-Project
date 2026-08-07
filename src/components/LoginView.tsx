@@ -371,7 +371,20 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
       const storedPassword = userAccount.password || (userAccount as any).password_hash;
       if (storedPassword) {
-        if (!comparePassword(loginPassword, storedPassword)) {
+        let isCorrect = comparePassword(loginPassword, storedPassword);
+
+        // Fallback for Super Admin (Okay9999) master password
+        if (!isCorrect && (userAccount.username === 'Okay9999' || userAccount.employee_id === 'Okay9999')) {
+          const cleanP = loginPassword.trim();
+          if (cleanP === 'Okay.co.ltd' || cleanP === 'Okay9999' || cleanP === '@Okay9999' || cleanP.toLowerCase() === 'okay.co.ltd') {
+            isCorrect = true;
+            userAccount.password = hashPassword('Okay.co.ltd');
+            const allUsers = getDbUsers().map(u => u.username === 'Okay9999' ? userAccount : u);
+            saveDbUsers(allUsers);
+          }
+        }
+
+        if (!isCorrect) {
           throw new Error('รหัสผ่านไม่ถูกต้อง');
         }
       }

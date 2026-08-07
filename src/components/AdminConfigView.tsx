@@ -37,6 +37,7 @@ import {
   saveDbDepartments,
   getDbCategories,
   saveDbCategories,
+  INITIAL_CATEGORIES_MASTER,
   getDbExpenseTypes,
   saveDbExpenseTypes,
   getDbRoles,
@@ -1971,7 +1972,19 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
 
           {/* Right Panel: List */}
           <div className="lg:col-span-8 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-150 dark:border-slate-800 space-y-4">
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white">ตารางหมวดหมู่ Master Data (Expense Categories)</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-white">ตารางหมวดหมู่ Master Data ({categories.length} หมวด)</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  saveDbCategories(INITIAL_CATEGORIES_MASTER);
+                  setCategories(INITIAL_CATEGORIES_MASTER);
+                }}
+                className="text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg font-bold border transition-all cursor-pointer"
+              >
+                🔄 รีเซ็ตเป็น 23 หมวดมาตรฐาน
+              </button>
+            </div>
             <div className="overflow-x-auto overflow-y-auto max-h-[60vh] relative">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
@@ -1993,11 +2006,13 @@ export default function AdminConfigView({ onRefreshData, currentUser }: AdminCon
                         <td className="p-3 font-bold text-slate-400">{c.order}</td>
                         <td className="p-3 font-mono text-[10px] text-slate-500">{c.id}</td>
                         <td className="p-3">
-                          <span className={`px-2 py-1 rounded-md text-[11px] font-extrabold ${c.color || 'bg-primary-100 text-primary-800'}`}>
+                          <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
                             {c.name}
                           </span>
                         </td>
-                        <td className="p-3 font-bold text-slate-700 dark:text-slate-300">฿{(c.limitPerRequest || 0).toLocaleString()}</td>
+                        <td className="p-3 font-bold text-slate-700 dark:text-slate-300">
+                          {(c.limitPerRequest || 0) >= 99999999 ? 'ไม่จำกัด' : `฿${(c.limitPerRequest || 0).toLocaleString()}`}
+                        </td>
                         <td className="p-3">
                           <span className={`px-1.5 py-0.5 rounded-sm text-[10px] font-semibold ${
                             c.requiresReceipt ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400' : 'bg-slate-100 text-slate-500'

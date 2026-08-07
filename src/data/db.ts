@@ -545,13 +545,30 @@ export function getDbCategories(): ExpenseCategoryMaster[] {
   const data = getFromCache('okey_db_categories_master');
   if (data) {
     const list = (typeof data === 'string' ? JSON.parse(data) : data) as ExpenseCategoryMaster[];
-    if (Array.isArray(list) && list.length >= INITIAL_CATEGORIES_MASTER.length) {
-      // Stripping vibrant colors from existing list
-      const neutralList = list.map(c => ({
+    if (Array.isArray(list) && list.length > 0) {
+      // Map user's existing categories by ID and by Name
+      const existingIds = new Set(list.map(c => c.id));
+      const existingNames = new Set(list.map(c => (c.name || '').toLowerCase().trim()));
+
+      // Find initial categories that don't exist in user list
+      const missingStandard = INITIAL_CATEGORIES_MASTER.filter(
+        sc => !existingIds.has(sc.id) && !existingNames.has((sc.name || '').toLowerCase().trim())
+      );
+
+      // Preserve all user's items and append missing standard categories
+      const neutralColor = 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700';
+      const combined = [...list, ...missingStandard].map((c, idx) => ({
         ...c,
-        color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+        color: neutralColor,
+        order: c.order || idx + 1
       }));
-      return neutralList;
+
+      // Update Firestore if new standard categories were merged in
+      if (missingStandard.length > 0) {
+        saveToFirestore('okey_db_categories_master', combined);
+      }
+
+      return combined;
     }
   }
   saveToFirestore('okey_db_categories_master', INITIAL_CATEGORIES_MASTER);

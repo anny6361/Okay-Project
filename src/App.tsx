@@ -305,14 +305,14 @@ export default function App() {
     // Adjust budgets accordingly
     let nextBudgets = [...budgets];
     if (!newReq.isDraft) {
-      if (finalStatus === 'pending') {
+      if ((finalStatus as string) === 'pending') {
         nextBudgets = budgets.map(b => {
           if (b.department === newReq.department) {
             return { ...b, pending: b.pending + newReq.amount };
           }
           return b;
         });
-      } else if (finalStatus === 'approved') {
+      } else if ((finalStatus as string) === 'approved') {
         nextBudgets = budgets.map(b => {
           if (b.department === newReq.department) {
             return { ...b, spent: b.spent + newReq.amount };

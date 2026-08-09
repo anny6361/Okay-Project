@@ -162,7 +162,15 @@ export const INITIAL_USERS: UserProfile[] = [
   }
 ];
 
-export const INITIAL_DEPARTMENTS: Department[] = [];
+export const INITIAL_DEPARTMENTS: Department[] = [
+  { department_id: 'DEPT-001', department_name: 'สำนักผู้บริหาร (Executive)', head_of_department: 'คุณประเสริฐ', budget: 1000000, status: 'active' },
+  { department_id: 'DEPT-002', department_name: 'ฝ่ายบัญชีและการเงิน (Accounting & Finance)', head_of_department: 'คุณวิภา', budget: 500000, status: 'active' },
+  { department_id: 'DEPT-003', department_name: 'ฝ่ายการตลาดและขาย (Marketing & Sales)', head_of_department: 'คุณสมชาย', budget: 800000, status: 'active' },
+  { department_id: 'DEPT-004', department_name: 'ฝ่ายเทคโนโลยีและระบบ (IT & Software)', head_of_department: 'คุณอนันต์', budget: 600000, status: 'active' },
+  { department_id: 'DEPT-005', department_name: 'ฝ่ายทรัพยากรบุคคล (Human Resources)', head_of_department: 'คุณดาริน', budget: 300000, status: 'active' },
+  { department_id: 'DEPT-006', department_name: 'ฝ่ายจัดซื้อและคลังสินค้า (Procurement)', head_of_department: 'คุณกิตติ', budget: 400000, status: 'active' },
+  { department_id: 'DEPT-007', department_name: 'ฝ่ายปฏิบัติการและบริการ (Operations)', head_of_department: 'คุณมานพ', budget: 700000, status: 'active' }
+];
 
 export const INITIAL_RULES: ApprovalRule[] = [];
 
@@ -385,7 +393,10 @@ export function getWorkflowChain(requesterId: string): { approverId: string; lev
 
 export function getDbDepartments(): Department[] {
   const depts = getFromCache('okey_db_departments');
-  if (depts) return (typeof depts === 'string' ? JSON.parse(depts) : depts);
+  if (depts) {
+    const parsed = typeof depts === 'string' ? JSON.parse(depts) : depts;
+    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  }
   saveToFirestore('okey_db_departments', INITIAL_DEPARTMENTS);
   return INITIAL_DEPARTMENTS;
 }

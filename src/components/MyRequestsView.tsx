@@ -1907,20 +1907,34 @@ export default function MyRequestsView({
                 {/* Supporting Document Type Selector */}
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    ประเภทเอกสารประกอบการเบิกจ่าย (Supporting Document Type) <span className="text-rose-500">*</span>
+                    ประเภทการแนบเอกสารหลักฐาน (Supporting Document Type) <span className="text-rose-500">*</span>
                   </label>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <button
                       type="button"
                       onClick={() => setSupportingDocType('receipt')}
-                      className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center flex flex-col items-center justify-center gap-1 ${
+                      className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center flex flex-col items-center justify-center gap-1 cursor-pointer ${
                         supportingDocType === 'receipt'
-                          ? 'bg-emerald-50/85 border-emerald-300 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-400 ring-1 ring-emerald-200 dark:ring-emerald-900/40'
+                          ? 'bg-emerald-50/85 border-emerald-300 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-400 ring-1 ring-emerald-200 dark:ring-emerald-900/40 shadow-xs'
                           : 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800/40 dark:border-slate-800 dark:text-slate-400 hover:bg-slate-100'
                       }`}
                     >
-                      <span className="text-base">📄</span>
-                      <span>ใบเสร็จรับเงิน / ใบกำกับภาษี</span>
+                      <span className="text-base">🤖✨</span>
+                      <span>เลือกแบบสแกน AI</span>
+                      <span className="text-[10px] font-normal text-emerald-600 dark:text-emerald-400">(สแกนใบเสร็จอัตโนมัติ)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSupportingDocType('other')}
+                      className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                        supportingDocType === 'other'
+                          ? 'bg-indigo-50/85 border-indigo-300 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-800 dark:text-indigo-400 ring-1 ring-indigo-200 dark:ring-indigo-900/40 shadow-xs'
+                          : 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800/40 dark:border-slate-800 dark:text-slate-400 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span className="text-base">📁</span>
+                      <span>เลือกแบบอื่นๆ ที่สแกนไม่ได้</span>
+                      <span className="text-[10px] font-normal text-indigo-600 dark:text-indigo-400">(สลิปโอน / เอกสารอื่น)</span>
                     </button>
                     <button
                       type="button"
@@ -1930,26 +1944,15 @@ export default function MyRequestsView({
                           setReplacementReceiptNumber(generateReplacementNumber());
                         }
                       }}
-                      className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center flex flex-col items-center justify-center gap-1 ${
+                      className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center flex flex-col items-center justify-center gap-1 cursor-pointer ${
                         supportingDocType === 'replacement'
-                          ? 'bg-amber-50/85 border-amber-300 text-amber-700 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-400 ring-1 ring-amber-200 dark:ring-amber-900/40'
+                          ? 'bg-amber-50/85 border-amber-300 text-amber-700 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-400 ring-1 ring-amber-200 dark:ring-amber-900/40 shadow-xs'
                           : 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800/40 dark:border-slate-800 dark:text-slate-400 hover:bg-slate-100'
                       }`}
                     >
                       <span className="text-base">📋</span>
                       <span>ใบแทนใบเสร็จ (Replacement)</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSupportingDocType('other')}
-                      className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all text-center flex flex-col items-center justify-center gap-1 ${
-                        supportingDocType === 'other'
-                          ? 'bg-indigo-50/85 border-indigo-300 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-800 dark:text-indigo-400 ring-1 ring-indigo-200 dark:ring-indigo-900/40'
-                          : 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800/40 dark:border-slate-800 dark:text-slate-400 hover:bg-slate-100'
-                      }`}
-                    >
-                      <span className="text-base">📁</span>
-                      <span>อื่นๆ / หลักฐานทดแทน</span>
+                      <span className="text-[10px] font-normal text-amber-600 dark:text-amber-400">(กรณีไม่มีใบเสร็จรับเงิน)</span>
                     </button>
                   </div>
                 </div>
@@ -2337,8 +2340,18 @@ export default function MyRequestsView({
                     }`}
                   >
                     <option value="">-- เลือกแผนกรับภาระ --</option>
-                    {departmentsList.map(dept => (
-                      <option key={dept.department_id} value={dept.department_name}>{dept.department_name}</option>
+                    {Array.from(new Set([
+                      ...(currentUser.department ? [currentUser.department] : []),
+                      ...departmentsList.map(d => d.department_name),
+                      'สำนักผู้บริหาร (Executive)',
+                      'ฝ่ายบัญชีและการเงิน (Accounting & Finance)',
+                      'ฝ่ายการตลาดและขาย (Marketing & Sales)',
+                      'ฝ่ายเทคโนโลยีและระบบ (IT & Software)',
+                      'ฝ่ายทรัพยากรบุคคล (Human Resources)',
+                      'ฝ่ายจัดซื้อและคลังสินค้า (Procurement)',
+                      'ฝ่ายปฏิบัติการและบริการ (Operations)'
+                    ])).map((deptName) => (
+                      <option key={deptName} value={deptName}>{deptName}</option>
                     ))}
                   </select>
                   {formErrors.department && (

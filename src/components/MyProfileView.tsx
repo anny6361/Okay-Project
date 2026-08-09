@@ -16,7 +16,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { UserProfile } from '../types';
-import { getDbUsers, saveDbUsers, hashPassword, addEnterpriseAuditLog, THAI_PROVINCES } from '../data/db';
+import { getDbUsers, saveDbUsers, hashPassword, addEnterpriseAuditLog, THAI_PROVINCES, getDbDepartments } from '../data/db';
 
 interface MyProfileViewProps {
   currentUser: UserProfile;
@@ -505,6 +505,43 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
                   value={address}
                   onChange={e => setAddress(e.target.value)}
                   placeholder="เช่น บ้านเลขที่ 123/45 ถนนพัฒนาการ แขวงสวนหลวง เขตสวนหลวง กรุงเทพฯ"
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-500"
+                />
+              </div>
+
+              {/* Department */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 block">หน่วยงาน / แผนกที่สังกัด (Department)</label>
+                <select
+                  value={department}
+                  onChange={e => setDepartment(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-500"
+                >
+                  <option value="">-- เลือกหรือระบุแผนก --</option>
+                  {Array.from(new Set([
+                    ...(currentUser.department ? [currentUser.department] : []),
+                    ...getDbDepartments().map(d => d.department_name),
+                    'สำนักผู้บริหาร (Executive)',
+                    'ฝ่ายบัญชีและการเงิน (Accounting & Finance)',
+                    'ฝ่ายการตลาดและขาย (Marketing & Sales)',
+                    'ฝ่ายเทคโนโลยีและระบบ (IT & Software)',
+                    'ฝ่ายทรัพยากรบุคคล (Human Resources)',
+                    'ฝ่ายจัดซื้อและคลังสินค้า (Procurement)',
+                    'ฝ่ายปฏิบัติการและบริการ (Operations)'
+                  ])).map((deptName) => (
+                    <option key={deptName} value={deptName}>{deptName}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Position */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 block">ตำแหน่งงาน (Position)</label>
+                <input
+                  type="text"
+                  value={position}
+                  onChange={e => setPosition(e.target.value)}
+                  placeholder="เช่น พนักงานฝ่ายบัญชี / Senior Developer"
                   className="w-full px-3.5 py-2.5 text-xs bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:ring-1 focus:ring-primary-500"
                 />
               </div>

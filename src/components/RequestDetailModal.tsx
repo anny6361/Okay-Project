@@ -16,10 +16,12 @@ import {
   ZoomOut,
   RotateCw,
   Printer,
-  Download
+  Download,
+  ExternalLink,
+  FileSpreadsheet
 } from 'lucide-react';
 import { ExpenseRequest, Comment } from '../types';
-import { getRealReceiptImages, getDbRequests, getClearingStatusInfo } from '../data/db';
+import { getRealReceiptImages, getDbRequests, getClearingStatusInfo, getRealWorkflowStepInfo, getSafePreviewUrl } from '../data/db';
 
 function ReceiptViewer({ receiptName, amount, title, date, id }: { receiptName: string; amount: number; title: string; date: string; id: string; key?: React.Key }) {
   const [zoom, setZoom] = useState(100);
@@ -668,18 +670,160 @@ export default function RequestDetailModal({ request, onClose, onAddComment, cur
             </div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">{request.title}</h3>
           </div>
-          <button 
-            id="close-detail-modal"
-            onClick={onClose}
-            className="text-rose-500 hover:text-white hover:bg-rose-500 dark:text-rose-400 dark:hover:text-white p-2 rounded-xl transition-all duration-200 bg-rose-50 dark:bg-rose-950/20 shadow-sm font-bold text-lg leading-none cursor-pointer flex items-center justify-center h-9 w-9"
-            title="ปิดหน้าต่าง"
-          >
-            ✕
-          </button>
+          
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const formattedAmount = (request.amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 });
+                const lastApprover = request.approvalHistory && request.approvalHistory.length > 0
+                  ? request.approvalHistory[request.approvalHistory.length - 1]
+                  : null;
+                const htmlContent = `
+                  <html>
+                    <head>
+                      <title>ใบเบิกเงิน - ${request.id}</title>
+                      <style>
+                        @page { size: A4; margin: 15mm; }
+                        body { font-family: 'Sarabun', sans-serif, system-ui; margin: 0; padding: 20px; color: #1e293b; font-size: 13px; line-height: 1.5; }
+                        .container { max-width: 800px; margin: 0 auto; border: 1px solid #cbd5e1; border-radius: 12px; padding: 30px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+                        .header { text-align: center; border-bottom: 2px solid #0284c7; padding-bottom: 15px; margin-bottom: 20px; }
+                        .company-title { font-size: 20px; font-weight: bold; color: #0369a1; }
+                        .doc-title { font-size: 16px; font-weight: bold; margin-top: 5px; color: #0f172a; }
+                        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; background: #f8fafc; padding: 15px; border-radius: 8px; }
+                        .amount-box { text-align: right; background: #f0f9ff; border: 1px solid #bae6fd; padding: 12px; border-radius: 8px; font-size: 18px; font-weight: bold; color: #0369a1; margin: 15px 0; }
+                        .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; text-align: center; }
+                        .sig-line { border-bottom: 1px dashed #94a3b8; height: 40px; margin-bottom: 8px; }
+                      </style>
+                    </head>
+                    <body>
+                      <div class="container">
+                        <div class="header">
+                          <div class="company-title">บริษัท โอเค จำกัด (OKAY CO., LTD.)</div>
+                          <div class="doc-title">ใบขอเบิกเงิน / ใบอนุมัติการจ่ายเงิน (Expense Request Form)</div>
+                          <div style="font-size: 11px; color: #64748b; margin-top: 4px;">เลขที่เอกสาร: ${request.id} | วันที่: ${request.date}</div>
+                        </div>
+                        <div class="grid">
+                          <div><strong>ผู้ขอเบิก:</strong> ${request.employeeName} (${request.employeeRole})</div>
+                          <div><strong>หน่วยงาน / แผนก:</strong> ${request.department}</div>
+                          <div><strong>ประเภทรายการ:</strong> ${request.expense_type === 'clearing' ? 'ใบเคลียร์เงินทดรอง' : request.expense_type === 'advance' ? 'ใบขอเบิกล่วงหน้า' : 'ใบเบิกชดเชย'}</div>
+                          <div><strong>สถานะ:</strong> ${request.status === 'approved' ? 'อนุมัติแล้ว' : request.status === 'rejected' ? 'ปฏิเสธ' : 'รออนุมัติ'}</div>
+                        </div>
+                        <div style="margin-bottom: 15px;">
+                          <strong>หัวข้อ / วัตถุประสงค์:</strong>
+                          <div style="background: #ffffff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px; margin-top: 4px;">
+                            ${request.title}
+                          </div>
+                        </div>
+                        ${request.description ? `
+                        <div style="margin-bottom: 15px;">
+                          <strong>รายละเอียดเพิ่มเติม:</strong>
+                          <div style="background: #ffffff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 6px; margin-top: 4px; white-space: pre-wrap;">
+                            ${request.description}
+                          </div>
+                        </div>` : ''}
+                        <div class="amount-box">
+                          ยอดเงินขอเบิกสุทธิ: ฿${formattedAmount} บาท
+                        </div>
+                        <div class="sig-grid">
+                          <div>
+                            <div class="sig-line"></div>
+                            <div>( ${request.employeeName} )</div>
+                            <div style="font-size: 11px; color: #64748b;">ผู้ขอเบิกเงิน (Requester)</div>
+                          </div>
+                          <div>
+                            <div class="sig-line">${lastApprover ? `<span style="color:#0284c7;font-weight:bold;">${lastApprover.approverName}</span>` : ''}</div>
+                            <div>( ${lastApprover ? lastApprover.approverName : '.........................................'} )</div>
+                            <div style="font-size: 11px; color: #64748b;">ผู้อนุมัติ (Authorized Approver)</div>
+                          </div>
+                        </div>
+                      </div>
+                    </body>
+                  </html>
+                `;
+                openPdfPreview(htmlContent, `ใบเบิกเงิน-${request.id}`);
+              }}
+              className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+            >
+              <Printer className="h-4 w-4" />
+              <span className="hidden sm:inline">พิมพ์ / บันทึก A4</span>
+            </button>
+
+            <button 
+              id="close-detail-modal"
+              onClick={onClose}
+              className="text-rose-500 hover:text-white hover:bg-rose-500 dark:text-rose-400 dark:hover:text-white p-2 rounded-xl transition-all duration-200 bg-rose-50 dark:bg-rose-950/20 shadow-sm font-bold text-lg leading-none cursor-pointer flex items-center justify-center h-9 w-9"
+              title="ปิดหน้าต่าง"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Body containing 2 columns */}
         <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-6">
+          
+          {/* Real-Time Live Workflow Step Banner */}
+          <div className="lg:col-span-5">
+            {(() => {
+              const stepInfo = getRealWorkflowStepInfo(request);
+              return (
+                <div className={`p-4 rounded-2xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xs ${stepInfo.color}`}>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md bg-white/80 dark:bg-slate-900/70 shadow-xs">
+                        📍 สถานะขั้นตอนจริงในระบบ (Live Workflow Progress)
+                      </span>
+                      {stepInfo.totalSteps > 0 && (
+                        <span className="text-xs font-bold px-2 py-0.5 bg-black/5 dark:bg-white/10 rounded-full">
+                          ขั้นตอนที่ {stepInfo.stepNumber} จาก {stepInfo.totalSteps}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm font-extrabold">{stepInfo.statusText}</p>
+                    {stepInfo.currentApproverName !== '-' && stepInfo.currentApproverName !== 'อนุมัติแล้ว' && (
+                      <p className="text-xs opacity-90 flex items-center gap-1.5 pt-0.5">
+                        <span>👤 ผู้อนุมัติที่ต้องดำเนินการในขั้นนี้:</span>
+                        <span className="font-bold underline">{stepInfo.currentApproverName}</span>
+                        <span className="text-[10px] opacity-75">({stepInfo.currentApproverRole})</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Stepper nodes */}
+                  {stepInfo.totalSteps > 1 && request.approvalHistory && (
+                    <div className="flex items-center gap-2 shrink-0 bg-white/70 dark:bg-slate-900/60 p-2.5 rounded-2xl border border-black/5">
+                      {request.approvalHistory.map((step, idx) => {
+                        const isDone = step.status === 'approved';
+                        const isCurrent = step.status === 'pending';
+                        const isRejected = step.status === 'rejected';
+                        return (
+                          <div key={idx} className="flex items-center gap-2" title={`${step.approverRole}: ${step.approverName}`}>
+                            <div className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-black shadow-xs transition-all ${
+                              isDone ? 'bg-emerald-600 text-white' :
+                              isRejected ? 'bg-rose-600 text-white' :
+                              isCurrent ? 'bg-amber-500 text-white ring-2 ring-amber-300 animate-pulse' :
+                              'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                            }`}>
+                              {isDone ? '✓' : isRejected ? '✕' : idx + 1}
+                            </div>
+                            <div className="hidden sm:block text-left">
+                              <p className="text-[10px] font-bold leading-none">{step.approverRole}</p>
+                              <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">{step.approverName}</p>
+                            </div>
+                            {idx < request.approvalHistory.length - 1 && (
+                              <div className={`w-4 h-0.5 ${isDone ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Column 1: Details & Receipt & Timeline (Takes 3/5 width) */}
           <div className="lg:col-span-3 space-y-6">
             {/* Meta details cards */}
@@ -1016,34 +1160,54 @@ export default function RequestDetailModal({ request, onClose, onAddComment, cur
             {/* Digital Receipt View */}
             <div className="space-y-3">
               <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
-                เอกสารใบเสร็จแนบ ({getRealReceiptImages(request).length})
+                เอกสารหลักฐานแนบ ({getRealReceiptImages(request).length})
               </h4>
               {getRealReceiptImages(request).length > 0 ? (
                 <div className="grid grid-cols-2 gap-3">
-                  {getRealReceiptImages(request).map((imgUrl, idx) => (
-                    <div 
-                      key={idx} 
-                      className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 aspect-[3/4] shadow-md group cursor-pointer hover:ring-2 hover:ring-primary-500 hover:ring-offset-2 dark:hover:ring-offset-slate-900 transition-all"
-                      onClick={() => setSelectedPreviewImage(imgUrl)}
-                    >
-                      {imgUrl.startsWith('data:application/pdf') || imgUrl.endsWith('.pdf') || imgUrl.includes('application/pdf') ? (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 group-hover:bg-rose-100 transition-colors">
-                          <FileText className="h-12 w-12 mb-2" />
-                          <span className="text-xs font-bold">PDF Document</span>
+                  {getRealReceiptImages(request).map((imgUrl, idx) => {
+                    const urlStr = (imgUrl || '').toLowerCase();
+                    const isPdf = urlStr.startsWith('data:application/pdf') || urlStr.includes('.pdf') || urlStr.startsWith('blob:application/pdf');
+                    const isDoc = urlStr.includes('word') || urlStr.includes('msword') || urlStr.includes('.doc');
+                    const isXls = urlStr.includes('excel') || urlStr.includes('spreadsheet') || urlStr.includes('.xls') || urlStr.includes('.csv');
+
+                    return (
+                      <div 
+                        key={idx} 
+                        className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 aspect-[3/4] shadow-md group cursor-pointer hover:ring-2 hover:ring-primary-500 hover:ring-offset-2 dark:hover:ring-offset-slate-900 transition-all p-2 flex flex-col justify-between"
+                        onClick={() => setSelectedPreviewImage(imgUrl)}
+                      >
+                        {isPdf ? (
+                          <div className="w-full h-full flex flex-col items-center justify-center bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 group-hover:bg-rose-100 dark:group-hover:bg-rose-900/30 transition-colors rounded-xl">
+                            <FileText className="h-10 w-10 mb-2" />
+                            <span className="text-xs font-bold">PDF Document</span>
+                          </div>
+                        ) : isDoc ? (
+                          <div className="w-full h-full flex flex-col items-center justify-center bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors rounded-xl">
+                            <FileText className="h-10 w-10 mb-2" />
+                            <span className="text-xs font-bold">Word Document</span>
+                          </div>
+                        ) : isXls ? (
+                          <div className="w-full h-full flex flex-col items-center justify-center bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30 transition-colors rounded-xl">
+                            <FileSpreadsheet className="h-10 w-10 mb-2" />
+                            <span className="text-xs font-bold">Excel / Spreadsheet</span>
+                          </div>
+                        ) : (
+                          <img 
+                            src={getSafePreviewUrl(imgUrl)} 
+                            className="w-full h-full object-cover rounded-xl transition-transform duration-300 group-hover:scale-105" 
+                            alt="Attached receipt" 
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              e.currentTarget.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&auto=format&fit=crop&q=80';
+                            }}
+                          />
+                        )}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-200 rounded-2xl">
+                          <ZoomIn className="h-6 w-6 text-white" />
                         </div>
-                      ) : (
-                        <img 
-                          src={imgUrl} 
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" 
-                          alt="Attached receipt" 
-                          referrerPolicy="no-referrer"
-                        />
-                      )}
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-200">
-                        <ZoomIn className="h-6 w-6 text-white" />
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="p-6 bg-slate-50 dark:bg-slate-800 text-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-400">
@@ -1133,37 +1297,181 @@ export default function RequestDetailModal({ request, onClose, onAddComment, cur
         </div>
       </div>
 
-      {/* Lightbox Modal (No filename or URLs shown) */}
+      {/* Lightbox Interactive Preview Modal */}
       {selectedPreviewImage && (
         <div 
-          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-fade-in"
+          className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[100] flex items-center justify-center p-4 animate-fade-in"
           onClick={() => setSelectedPreviewImage(null)}
         >
-          <div className="relative max-w-3xl max-h-[90vh]">
-            <button
-              type="button"
-              onClick={() => setSelectedPreviewImage(null)}
-              className="absolute -top-14 right-0 bg-rose-600 hover:bg-rose-700 text-white p-2.5 rounded-full transition-all cursor-pointer shadow-lg hover:scale-105 z-10 flex items-center justify-center h-10 w-10"
-              title="ปิด"
-            >
-              <X className="h-6 w-6 font-bold" />
-            </button>
-            {selectedPreviewImage.startsWith('data:application/pdf') || selectedPreviewImage.endsWith('.pdf') || selectedPreviewImage.includes('application/pdf') ? (
-              <iframe
-                src={selectedPreviewImage}
-                className="w-[85vw] max-w-5xl h-[85vh] rounded-2xl border border-white/10 shadow-2xl bg-white dark:bg-slate-900"
-                title="PDF Viewer"
-                onClick={(e) => e.stopPropagation()}
-              />
-            ) : (
-              <img 
-                src={selectedPreviewImage} 
-                className="max-w-full max-h-[85vh] object-contain rounded-2xl border border-white/10 shadow-2xl" 
-                alt="Zoomed evidence" 
-                referrerPolicy="no-referrer"
-                onClick={(e) => e.stopPropagation()}
-              />
-            )}
+          <div 
+            className="relative w-full max-w-4xl max-h-[92vh] bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top action bar */}
+            <div className="px-5 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-white shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="h-4 w-4 text-primary-400 shrink-0" />
+                <span className="text-xs font-bold text-slate-200 truncate">
+                  {selectedPreviewImage.startsWith('data:application/pdf') || selectedPreviewImage.toLowerCase().includes('.pdf') ? 'เอกสารหลักฐานเบิกจ่าย (PDF File)' : 'หลักฐานใบเสร็จรับเงิน (Image File)'}
+                </span>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const safeUrl = getSafePreviewUrl(selectedPreviewImage);
+                    if (selectedPreviewImage.startsWith('data:application/pdf') || selectedPreviewImage.toLowerCase().includes('.pdf')) {
+                      openPdfPreview(`
+                        <html>
+                          <head><title>พิมพ์เอกสารแนบ PDF</title></head>
+                          <body style="margin:0;padding:0;background:#fff;">
+                            <iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe>
+                          </body>
+                        </html>
+                      `, 'พิมพ์หลักฐานแนบ (PDF)');
+                    } else {
+                      openPdfPreview(`
+                        <html>
+                          <head>
+                            <title>พิมพ์หลักฐานแนบ</title>
+                            <style>
+                              body { margin: 0; padding: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; background: #fff; }
+                              img { max-width: 100%; max-height: 85vh; border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
+                              .header { margin-bottom: 15px; text-align: center; }
+                              h3 { margin: 0; font-size: 18px; color: #1e293b; }
+                              p { margin: 4px 0 0 0; font-size: 12px; color: #64748b; }
+                            </style>
+                          </head>
+                          <body>
+                            <div class="header">
+                              <h3>หลักฐานประกอบการเบิกจ่าย - เอกสารเลขที่: ${request.id}</h3>
+                              <p>หัวข้อ: ${request.title} | ยอดเงิน: ฿${(request.amount || 0).toLocaleString()} | วันที่: ${request.date}</p>
+                            </div>
+                            <img src="${safeUrl}" alt="หลักฐานแนบ" />
+                          </body>
+                        </html>
+                      `, `หลักฐานแนบ-${request.id}`);
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  title="พิมพ์หลักฐานแนบ"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  <span>พิมพ์หลักฐาน</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const safeUrl = getSafePreviewUrl(selectedPreviewImage);
+                    const win = window.open();
+                    if (win) {
+                      win.document.write(`<html><head><title>หลักฐานแนบ</title></head><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#0f172a;"><iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe></body></html>`);
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                  title="เปิดในแท็บใหม่"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>เปิดหน้าใหม่</span>
+                </button>
+
+                <a
+                  href={getSafePreviewUrl(selectedPreviewImage)}
+                  download="attached_evidence_document"
+                  className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                  title="ดาวน์โหลดไฟล์หลักฐาน"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>ดาวน์โหลด</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedPreviewImage(null)}
+                  className="p-1.5 bg-rose-600/80 hover:bg-rose-600 text-white rounded-xl transition-all cursor-pointer ml-2"
+                  title="ปิด"
+                >
+                  <X className="h-5 w-5 font-bold" />
+                </button>
+              </div>
+            </div>
+
+            {/* Viewer content area */}
+            <div className="flex-1 p-4 bg-slate-950 flex items-center justify-center overflow-auto min-h-[60vh]">
+              {(() => {
+                const imgUrl = selectedPreviewImage || '';
+                const urlLower = imgUrl.toLowerCase();
+                const safeUrl = getSafePreviewUrl(imgUrl);
+
+                const isPdf = urlLower.startsWith('data:application/pdf') || urlLower.includes('.pdf') || urlLower.startsWith('blob:application/pdf');
+                const isDoc = urlLower.includes('word') || urlLower.includes('msword') || urlLower.includes('.doc');
+                const isXls = urlLower.includes('excel') || urlLower.includes('spreadsheet') || urlLower.includes('.xls') || urlLower.includes('.csv');
+                const isImage = urlLower.startsWith('data:image/') || urlLower.startsWith('http') || urlLower.includes('unsplash') || /\.(jpg|jpeg|png|webp|gif|svg|bmp)(\?.*)?$/.test(urlLower);
+
+                if (isPdf) {
+                  return (
+                    <iframe
+                      src={safeUrl}
+                      className="w-full h-[75vh] rounded-2xl border border-slate-800 bg-white"
+                      title="PDF Document Preview"
+                    />
+                  );
+                } else if (isDoc || isXls || (!isImage && imgUrl.startsWith('data:'))) {
+                  return (
+                    <div className="max-w-xl w-full p-8 bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl text-center space-y-6">
+                      <div className="mx-auto w-20 h-20 rounded-2xl bg-primary-950/60 text-primary-400 flex items-center justify-center border border-primary-800/50">
+                        {isXls ? <FileSpreadsheet className="h-10 w-10 text-emerald-400" /> : <FileText className="h-10 w-10 text-blue-400" />}
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="text-lg font-bold text-white">
+                          {isXls ? 'เอกสารตารางคำนวณ (Excel / CSV)' : isDoc ? 'เอกสารข้อความ (Word Document)' : 'เอกสารหลักฐานแนบ (Document File)'}
+                        </h3>
+                        <p className="text-xs text-slate-400">
+                          เอกสารไฟล์ต้นฉบับถูกแนบมาในระบบอย่างสมบูรณ์ ผู้อนุมัติและผู้ขอเบิกสามารถกดเปิดอ่าน ดาวน์โหลด หรือพิมพ์ใบสรุปเอกสารได้ทันที
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                        <a 
+                          href={safeUrl} 
+                          download="attached_evidence_document"
+                          className="px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                        >
+                          <Download className="h-4 w-4" />
+                          <span>ดาวน์โหลดเอกสาร</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const win = window.open();
+                            if (win) {
+                              win.document.write(`<html><head><title>เอกสารแนบ</title></head><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#0f172a;"><iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe></body></html>`);
+                            }
+                          }}
+                          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          <span>เปิดในหน้าต่างใหม่</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <img 
+                      src={safeUrl} 
+                      className="max-w-full max-h-[75vh] object-contain rounded-2xl shadow-xl border border-slate-800" 
+                      alt="Zoomed attached receipt evidence" 
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        e.currentTarget.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&auto=format&fit=crop&q=80';
+                      }}
+                    />
+                  );
+                }
+              })()}
+            </div>
           </div>
         </div>
       )}

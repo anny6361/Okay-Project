@@ -342,6 +342,55 @@ export default function App() {
 
     const nextRequests = requests.map(req => {
       if (req.id === id) {
+        // If converting a draft to a submitted pending request, calculate workflow steps and current approver
+        if (req.status === 'draft' && updatedFields.status === 'pending') {
+          const creatorId = req.created_by || currentUser?.user_id || 'user-1';
+          const chain = getWorkflowChain(creatorId);
+          const dbUsers = getDbUsers();
+
+          let current_approver: string | undefined = undefined;
+          let next_approver: string | null = null;
+          const initialSteps: ApprovalStep[] = [];
+
+          if (chain.length > 0) {
+            current_approver = chain[0].approverId;
+            next_approver = chain[1]?.approverId || null;
+
+            const firstApproverUser = dbUsers.find(u => u.user_id === current_approver);
+            initialSteps.push({
+              id: `step-${id}-1`,
+              approverName: firstApproverUser?.name || 'ผู้อนุมัติขั้นแรก',
+              approverRole: firstApproverUser?.position || firstApproverUser?.approval_level || 'Level 1 Approver',
+              status: 'pending',
+              date: new Date().toISOString().split('T')[0]
+            });
+          } else {
+            const defaultApprover = dbUsers.find(u => 
+              (u.role === 'Administrator' || u.approval_level === 'Administrator' || u.approval_level === 'Level 1' || u.approval_level === 'Level 2') && 
+              u.user_id !== creatorId
+            ) || dbUsers.find(u => u.role === 'Administrator' || u.approval_level === 'Administrator' || u.username === 'Okay9999') || dbUsers[0];
+
+            current_approver = defaultApprover ? defaultApprover.user_id : 'user-superadmin';
+
+            initialSteps.push({
+              id: `step-${id}-1`,
+              approverName: defaultApprover?.name || 'ผู้จัดการแผนก / ผู้ดูแลระบบ',
+              approverRole: defaultApprover?.position || defaultApprover?.approval_level || 'ผู้อนุมัติประจำแผนก',
+              status: 'pending',
+              date: new Date().toISOString().split('T')[0]
+            });
+          }
+
+          return {
+            ...req,
+            ...updatedFields,
+            status: 'pending' as const,
+            current_approver,
+            next_approver,
+            approvalHistory: initialSteps.length > 0 ? initialSteps : req.approvalHistory
+          };
+        }
+
         return {
           ...req,
           ...updatedFields,

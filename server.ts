@@ -119,7 +119,24 @@ app.post("/api/ocr", async (req, res) => {
       return res.status(400).json({ success: false, error: "Missing fileData or mimeType" });
     }
 
-    if (fileData.includes(",")) {
+    // Handle remote HTTP/HTTPS URLs (e.g. Firebase Storage URLs)
+    if (typeof fileData === 'string' && (fileData.startsWith('http://') || fileData.startsWith('https://'))) {
+      try {
+        const fetchRes = await fetch(fileData);
+        if (fetchRes.ok) {
+          const contentType = fetchRes.headers.get('content-type');
+          if (contentType && !mimeType) {
+            mimeType = contentType.split(';')[0];
+          }
+          const arrayBuffer = await fetchRes.arrayBuffer();
+          fileData = Buffer.from(arrayBuffer).toString("base64");
+        }
+      } catch (fetchErr) {
+        console.warn("Failed to fetch remote image URL in /api/ocr:", fetchErr);
+      }
+    }
+
+    if (typeof fileData === 'string' && fileData.includes(",")) {
       fileData = fileData.split(",")[1];
     }
 

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { openPdfPreview } from '../lib/pdf-preview';
 import { Search, Filter, Calendar, FileText, Image as ImageIcon, ZoomIn, Download, File, X, ChevronLeft, ChevronRight, RotateCw, ZoomOut, Printer, Grid, List } from 'lucide-react';
-import { getDbRequests, addEnterpriseAuditLog } from '../data/db';
+import { getDbRequests, getRealReceiptImages, addEnterpriseAuditLog, getSafePreviewUrl } from '../data/db';
 import { ExpenseRequest } from '../types';
 
 export default function DocumentGalleryView({ currentUser }: { currentUser: any }) {
@@ -19,36 +19,77 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
   const allDocs = useMemo(() => {
     const docs: any[] = [];
     allRequests.forEach(req => {
-      // Check role/access (simulate basic access)
-      if (currentUser?.approval_level !== 'Administrator' && req.created_by !== currentUser?.user_id) {
-        return; // skip if not admin and not owner
+      // Access: Show if approved OR if user is admin/approver/manager OR if owner
+      const isOwner = req.created_by === currentUser?.user_id || req.employeeName === currentUser?.name;
+      const isApproved = req.status === 'approved' || req.status === 'cleared' || req.status === 'paid';
+      const isElevatedUser = currentUser?.approval_level === 'Administrator' || 
+                            currentUser?.role === 'Administrator' || 
+                            currentUser?.user_id === 'user-admin' || 
+                            currentUser?.user_id === 'user-superadmin' || 
+                            currentUser?.username === 'Okay9999';
+
+      if (!isApproved && !isOwner && !isElevatedUser) {
+        return;
       }
 
-      const attachments = [
-        ...(req.receiptUrls || []),
-        ...((req as any).attachment_list || []).map((a:any) => a.dataUrl)
-      ];
+      // Collect from attachment_list if present
+      if (req.attachment_list && req.attachment_list.length > 0) {
+        req.attachment_list.forEach((att, idx) => {
+          if (!att.dataUrl) return;
+          let ext = 'file';
+          const nameLower = (att.name || '').toLowerCase();
+          const urlLower = (att.dataUrl || '').toLowerCase();
 
-      attachments.forEach((dataUrl: string, idx: number) => {
-        if (!dataUrl || !dataUrl.startsWith('data:')) return;
-        const parts = dataUrl.split(',');
-        if (parts.length !== 2) return;
-        
-        let ext = 'unknown';
-        const mimeMatch = parts[0].match(/:(.*?);/);
-        if (mimeMatch) {
-          const mime = mimeMatch[1];
-          if (mime.includes('pdf')) ext = 'pdf';
-          else if (mime.includes('jpeg') || mime.includes('jpg')) ext = 'jpg';
-          else if (mime.includes('png')) ext = 'png';
+          if (nameLower.endsWith('.pdf') || urlLower.includes('pdf')) ext = 'pdf';
+          else if (nameLower.endsWith('.doc') || nameLower.endsWith('.docx') || urlLower.includes('word') || urlLower.includes('msword')) ext = 'docx';
+          else if (nameLower.endsWith('.xls') || nameLower.endsWith('.xlsx') || nameLower.endsWith('.csv') || urlLower.includes('excel') || urlLower.includes('spreadsheet')) ext = 'xlsx';
+          else if (nameLower.endsWith('.png') || urlLower.includes('png')) ext = 'png';
+          else if (nameLower.endsWith('.jpg') || nameLower.endsWith('.jpeg') || urlLower.includes('jpg') || urlLower.includes('jpeg')) ext = 'jpg';
+          else if (nameLower.endsWith('.zip') || nameLower.endsWith('.rar')) ext = 'zip';
+
+          docs.push({
+            id: `${req.id}-att-${idx}`,
+            reqId: req.id,
+            reqTitle: req.title,
+            reqDate: req.date,
+            reqStatus: req.status,
+            reqDepartment: req.department,
+            reqMerchant: (req as any).merchant || (req as any).replacement_merchant || req.title || 'ไม่ระบุร้านค้า',
+            url: att.dataUrl,
+            ext: ext,
+            name: att.name || `REQ_${req.id}_Doc_${idx+1}.${ext}`,
+            amount: req.amount
+          });
+        });
+      }
+
+      // Also collect from receiptImages
+      const receiptImages = getRealReceiptImages(req);
+      receiptImages.forEach((dataUrl: string, idx: number) => {
+        if (!dataUrl) return;
+        // Avoid duplicate if already collected from attachment_list
+        if (req.attachment_list?.some(a => a.dataUrl === dataUrl)) return;
+
+        let ext = 'jpg';
+        const urlLower = dataUrl.toLowerCase();
+        if (urlLower.includes('pdf') || urlLower.startsWith('data:application/pdf')) {
+          ext = 'pdf';
+        } else if (urlLower.includes('png') || urlLower.startsWith('data:image/png')) {
+          ext = 'png';
+        } else if (urlLower.includes('word') || urlLower.includes('msword')) {
+          ext = 'docx';
+        } else if (urlLower.includes('excel') || urlLower.includes('spreadsheet')) {
+          ext = 'xlsx';
         }
 
         docs.push({
-          id: `${req.id}-${idx}`,
+          id: `${req.id}-receipt-${idx}`,
           reqId: req.id,
           reqTitle: req.title,
           reqDate: req.date,
-          reqMerchant: (req as any).merchant || 'ไม่ระบุร้านค้า',
+          reqStatus: req.status,
+          reqDepartment: req.department,
+          reqMerchant: (req as any).merchant || (req as any).replacement_merchant || 'ไม่ระบุร้านค้า',
           url: dataUrl,
           ext: ext,
           name: `REQ_${req.id}_Evidence_${idx+1}.${ext}`,
@@ -64,8 +105,13 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
       const s = (searchTerm || '').toLowerCase();
       const matchSearch = String(d.reqId || '').toLowerCase().includes(s) || 
                           String(d.reqTitle || '').toLowerCase().includes(s) || 
-                          String(d.reqMerchant || '').toLowerCase().includes(s);
-      const matchType = filterType === 'all' ? true : d.ext === filterType || (filterType === 'image' && (d.ext === 'jpg' || d.ext === 'png'));
+                          String(d.reqMerchant || '').toLowerCase().includes(s) ||
+                          String(d.name || '').toLowerCase().includes(s);
+      const matchType = filterType === 'all' ? true :
+                        filterType === 'image' ? (d.ext === 'jpg' || d.ext === 'png') :
+                        filterType === 'pdf' ? (d.ext === 'pdf') :
+                        filterType === 'office' ? (d.ext === 'docx' || d.ext === 'xlsx') :
+                        d.ext === filterType;
       return matchSearch && matchType;
     }).sort((a, b) => {
       if (sortBy === 'date-desc') return new Date(b.reqDate).getTime() - new Date(a.reqDate).getTime();
@@ -103,9 +149,10 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
             value={filterType}
             onChange={e => setFilterType(e.target.value)}
           >
-            <option value="all">ทุกประเภท</option>
+            <option value="all">ทุกประเภทเอกสาร</option>
             <option value="image">รูปภาพ (JPG, PNG)</option>
             <option value="pdf">เอกสาร PDF</option>
+            <option value="office">ไฟล์ Office (Word, Excel)</option>
           </select>
 
           <select 
@@ -138,7 +185,25 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
             <div key={doc.id} className="group relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all">
               <div className="aspect-square bg-slate-100 dark:bg-slate-800 relative flex items-center justify-center overflow-hidden">
                 {doc.ext === 'pdf' ? (
-                  <FileText className="h-12 w-12 text-rose-400" />
+                  <div className="flex flex-col items-center justify-center text-rose-500 p-2 text-center">
+                    <FileText className="h-10 w-10 mb-1" />
+                    <span className="text-[10px] font-bold uppercase">PDF Document</span>
+                  </div>
+                ) : doc.ext === 'docx' ? (
+                  <div className="flex flex-col items-center justify-center text-blue-500 p-2 text-center">
+                    <FileText className="h-10 w-10 mb-1" />
+                    <span className="text-[10px] font-bold uppercase">Word Document</span>
+                  </div>
+                ) : doc.ext === 'xlsx' ? (
+                  <div className="flex flex-col items-center justify-center text-emerald-500 p-2 text-center">
+                    <FileText className="h-10 w-10 mb-1" />
+                    <span className="text-[10px] font-bold uppercase">Excel Sheet</span>
+                  </div>
+                ) : doc.ext === 'zip' ? (
+                  <div className="flex flex-col items-center justify-center text-amber-500 p-2 text-center">
+                    <File className="h-10 w-10 mb-1" />
+                    <span className="text-[10px] font-bold uppercase">Archive</span>
+                  </div>
                 ) : (
                   <img src={doc.url} alt={doc.name} className="w-full h-full object-cover" />
                 )}
@@ -161,7 +226,7 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
               </div>
               <div className="p-3">
                 <p className="text-[10px] font-bold text-primary-600 truncate">{doc.reqId}</p>
-                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate mt-0.5">{doc.reqMerchant || doc.reqTitle}</p>
+                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate mt-0.5">{doc.name || doc.reqMerchant || doc.reqTitle}</p>
                 <p className="text-[10px] text-slate-400 mt-1">{doc.reqDate}</p>
               </div>
             </div>
@@ -189,7 +254,11 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className="h-10 w-10 rounded-lg bg-slate-100 dark:bg-slate-800 overflow-hidden flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700">
-                        {doc.ext === 'pdf' ? <FileText className="h-5 w-5 text-rose-400" /> : <img src={doc.url} alt="thumb" className="w-full h-full object-cover" />}
+                        {doc.ext === 'pdf' ? <FileText className="h-5 w-5 text-rose-400" /> :
+                         doc.ext === 'docx' ? <FileText className="h-5 w-5 text-blue-500" /> :
+                         doc.ext === 'xlsx' ? <FileText className="h-5 w-5 text-emerald-500" /> :
+                         doc.ext === 'zip' ? <File className="h-5 w-5 text-amber-500" /> :
+                         <img src={doc.url} alt="thumb" className="w-full h-full object-cover" />}
                       </div>
                       <div className="max-w-[120px] truncate">
                         <span className="text-xs font-semibold">{doc.name}</span>
@@ -244,7 +313,7 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
               />
             ) : (
               <iframe 
-                src={viewerItem.url} 
+                src={getSafePreviewUrl(viewerItem.url)} 
                 className="w-full h-full border-0 rounded-xl bg-white"
                 title="pdf preview"
               />

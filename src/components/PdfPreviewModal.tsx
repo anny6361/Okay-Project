@@ -24,9 +24,38 @@ export default function PdfPreviewModal() {
   if (!content) return null;
 
   const handlePrint = () => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.print();
+    try {
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.focus();
+        iframeRef.current.contentWindow.print();
+        return;
+      }
+    } catch (e) {
+      console.warn('Iframe print error, attempting new window print:', e);
     }
+
+    if (content) {
+      const printWin = window.open('', '_blank');
+      if (printWin) {
+        printWin.document.write(content.html);
+        printWin.document.close();
+        printWin.onload = () => {
+          printWin.focus();
+          printWin.print();
+        };
+      }
+    }
+  };
+
+  const handleDownload = () => {
+    if (!content) return;
+    const blob = new Blob([content.html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${content.title || 'document'}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -39,14 +68,22 @@ export default function PdfPreviewModal() {
           <div className="flex items-center gap-2">
             <button 
               onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/10 cursor-pointer"
             >
               <Printer size={16} />
-              <span className="hidden sm:inline">พิมพ์เอกสาร</span>
+              <span>พิมพ์เอกสาร (Print A4)</span>
+            </button>
+            <button 
+              onClick={handleDownload}
+              className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            >
+              <Download size={16} />
+              <span className="hidden sm:inline">บันทึกไฟล์ (Save HTML/A4)</span>
             </button>
             <button 
               onClick={closePdfPreview}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              className="p-2 text-rose-500 hover:text-white hover:bg-rose-500 rounded-xl transition-colors cursor-pointer"
+              title="ปิด"
             >
               <X size={20} />
             </button>

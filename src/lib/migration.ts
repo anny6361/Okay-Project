@@ -1,5 +1,6 @@
 import { db, auth } from '../firebase';
 import { doc, getDoc, setDoc, writeBatch, collection, getDocs } from 'firebase/firestore';
+import { sanitizeForFirestore } from './firestore-sync';
 
 export async function migrateLocalToFirestore() {
   try {
@@ -24,10 +25,10 @@ export async function migrateLocalToFirestore() {
     users.forEach((user: any) => {
       const id = user.user_id || user.id || Math.random().toString(36).substr(2, 9);
       const userRef = doc(db, 'users', id);
-      batch.set(userRef, user);
+      batch.set(userRef, sanitizeForFirestore(user));
       
       const empRef = doc(db, 'employees', id);
-      batch.set(empRef, user);
+      batch.set(empRef, sanitizeForFirestore(user));
     });
 
     // 2. Migrate Departments
@@ -35,24 +36,25 @@ export async function migrateLocalToFirestore() {
     depts.forEach((dept: any) => {
       const id = dept.id || Math.random().toString(36).substr(2, 9);
       const deptRef = doc(db, 'departments', id);
-      batch.set(deptRef, dept);
+      batch.set(deptRef, sanitizeForFirestore(dept));
     });
 
     // 3. Migrate Requests to expenseRequests and advanceRequests
     const requests = JSON.parse(localStorage.getItem('okey_requests') || '[]');
     requests.forEach((req: any) => {
+      const sanitized = sanitizeForFirestore(req);
       if (req.expense_type === 'advance') {
         const id = req.id || req.request_id || Math.random().toString(36).substr(2, 9);
         const reqRef = doc(db, 'advanceRequests', id);
-        batch.set(reqRef, req);
+        batch.set(reqRef, sanitized);
       } else if (req.expense_type === 'clearing') {
         const id = req.id || req.request_id || Math.random().toString(36).substr(2, 9);
         const reqRef = doc(db, 'advanceClearings', id);
-        batch.set(reqRef, req);
+        batch.set(reqRef, sanitized);
       } else {
         const id = req.id || req.request_id || Math.random().toString(36).substr(2, 9);
         const reqRef = doc(db, 'expenseRequests', id);
-        batch.set(reqRef, req);
+        batch.set(reqRef, sanitized);
       }
     });
 

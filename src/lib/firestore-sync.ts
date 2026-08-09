@@ -110,6 +110,25 @@ export function setupFirestoreSync() {
   });
 }
 
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return null as any;
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeForFirestore(item)) as any;
+  }
+  if (typeof data === 'object' && !(data instanceof Date)) {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== undefined && typeof value !== 'function') {
+        cleaned[key] = sanitizeForFirestore(value);
+      }
+    }
+    return cleaned as any;
+  }
+  return data;
+}
+
 export async function saveToFirestore(localKey: string, data: any) {
   DB_CACHE[localKey] = data; // Optimistic memory cache
   
@@ -129,7 +148,8 @@ export async function saveToFirestore(localKey: string, data: any) {
         if (!req.id) continue;
         const targetColl = req.expense_type === 'advance' ? 'advanceRequests' : req.expense_type === 'clearing' ? 'advanceClearings' : 'expenseRequests';
         try {
-          await setDoc(doc(db, targetColl, req.id), req, { merge: true });
+          const cleanReq = sanitizeForFirestore(req);
+          await setDoc(doc(db, targetColl, req.id), cleanReq, { merge: true });
         } catch (docErr) {
           console.error(`Failed to save individual request ${req.id} to Firestore:`, docErr);
         }
@@ -142,39 +162,44 @@ export async function saveToFirestore(localKey: string, data: any) {
     if (localKey === 'okey_db_users') {
       data.forEach((u: any) => {
         if (u.user_id) {
-          batch.set(doc(db, 'users', u.user_id), u, { merge: true });
-          batch.set(doc(db, 'employees', u.user_id), u, { merge: true });
+          const cleanUser = sanitizeForFirestore(u);
+          batch.set(doc(db, 'users', u.user_id), cleanUser, { merge: true });
+          batch.set(doc(db, 'employees', u.user_id), cleanUser, { merge: true });
         }
       });
     } 
     else if (localKey === 'okey_db_departments') {
       data.forEach((d: any) => {
-        if (d.id) batch.set(doc(db, 'departments', d.id), d, { merge: true });
+        if (d.id) {
+          const cleanDept = sanitizeForFirestore(d);
+          batch.set(doc(db, 'departments', d.id), cleanDept, { merge: true });
+        }
       });
     }
     else if (localKey === 'okey_db_enterprise_audit_logs') {
       data.forEach((log: any) => {
         const id = log.id || Math.random().toString(36).substring(7);
-        batch.set(doc(db, 'auditLogs', id), { ...log, id }, { merge: true });
+        const cleanLog = sanitizeForFirestore({ ...log, id });
+        batch.set(doc(db, 'auditLogs', id), cleanLog, { merge: true });
       });
     }
     else if (localKey === 'okey_db_company_data') {
-      batch.set(doc(db, 'companySettings', 'main'), data, { merge: true });
+      batch.set(doc(db, 'companySettings', 'main'), sanitizeForFirestore(data), { merge: true });
     }
     else if (localKey === 'okey_db_categories_master') {
-      batch.set(doc(db, 'masterData', 'categories'), { items: data }, { merge: true });
+      batch.set(doc(db, 'masterData', 'categories'), sanitizeForFirestore({ items: data }), { merge: true });
     }
     else if (localKey === 'okey_db_expense_types') {
-      batch.set(doc(db, 'masterData', 'expenseTypes'), { items: data }, { merge: true });
+      batch.set(doc(db, 'masterData', 'expenseTypes'), sanitizeForFirestore({ items: data }), { merge: true });
     }
     else if (localKey === 'okey_db_approval_levels') {
-      batch.set(doc(db, 'masterData', 'approvalLevels'), { items: data }, { merge: true });
+      batch.set(doc(db, 'masterData', 'approvalLevels'), sanitizeForFirestore({ items: data }), { merge: true });
     }
     else if (localKey === 'okey_db_roles_master') {
-      batch.set(doc(db, 'masterData', 'roles'), { items: data }, { merge: true });
+      batch.set(doc(db, 'masterData', 'roles'), sanitizeForFirestore({ items: data }), { merge: true });
     }
     else if (localKey === 'okey_db_rules') {
-      batch.set(doc(db, 'companySettings', 'rules'), { items: data }, { merge: true });
+      batch.set(doc(db, 'companySettings', 'rules'), sanitizeForFirestore({ items: data }), { merge: true });
     }
 
     await batch.commit();

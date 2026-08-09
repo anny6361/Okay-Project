@@ -893,34 +893,47 @@ export function getRealReceiptImages(req: ExpenseRequest): string[] {
   if (!req) return [];
   const list: string[] = [];
   
-  // 1. Check if we have attachment_list (usually populated for replacement receipts, or when users attach additional files)
+  // 1. Check req.attachment_list first
   if (req.attachment_list && req.attachment_list.length > 0) {
     req.attachment_list.forEach(file => {
-      if (file.dataUrl) {
+      if (file.dataUrl && !list.includes(file.dataUrl)) {
         list.push(file.dataUrl);
       }
     });
   }
+
+  // 2. Check req.receiptUrl (singular)
+  if (req.receiptUrl && typeof req.receiptUrl === 'string') {
+    if (req.receiptUrl.startsWith('data:') || req.receiptUrl.startsWith('http') || req.receiptUrl.startsWith('/') || req.receiptUrl.startsWith('blob:')) {
+      if (!list.includes(req.receiptUrl)) list.push(req.receiptUrl);
+    } else {
+      const img = mapFilenameToRealReceipt(req.receiptUrl, req.category);
+      if (img && !list.includes(img)) list.push(img);
+    }
+  }
   
-  // 2. Check if we have receiptUrls
+  // 3. Check if we have receiptUrls
   if (req.receiptUrls && req.receiptUrls.length > 0) {
     req.receiptUrls.forEach(url => {
-      // If it's a base64 image or actual absolute/relative url, push it
-      if (url && (url.startsWith('data:image/') || url.startsWith('data:application/pdf') || url.startsWith('http') || url.startsWith('/'))) {
-        list.push(url);
+      if (url && (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/') || url.startsWith('blob:'))) {
+        if (!list.includes(url)) list.push(url);
       } else if (url) {
-        // Map the legacy filename to a genuine high-quality receipt image
         const img = mapFilenameToRealReceipt(url, req.category);
-        if (img) list.push(img);
+        if (img && !list.includes(img)) list.push(img);
       }
     });
-  } else if (req.receiptName) {
-    if (req.receiptName.startsWith('data:image/') || req.receiptName.startsWith('data:application/pdf') || req.receiptName.startsWith('http') || req.receiptName.startsWith('/')) {
-      list.push(req.receiptName);
+  } else if (req.receiptName && list.length === 0) {
+    if (req.receiptName.startsWith('data:') || req.receiptName.startsWith('http') || req.receiptName.startsWith('/') || req.receiptName.startsWith('blob:')) {
+      if (!list.includes(req.receiptName)) list.push(req.receiptName);
     } else {
       const img = mapFilenameToRealReceipt(req.receiptName, req.category);
-      if (img) list.push(img);
+      if (img && !list.includes(img)) list.push(img);
     }
+  }
+
+  // 4. Check refund proof url
+  if (req.refund_proof_url && !list.includes(req.refund_proof_url)) {
+    list.push(req.refund_proof_url);
   }
   
   // fallback if there's absolutely nothing
@@ -929,6 +942,77 @@ export function getRealReceiptImages(req: ExpenseRequest): string[] {
   }
   
   return list;
+}
+
+// Structured helper for rich attachment details across all document types
+export function getRealReceiptAttachments(req: ExpenseRequest): { name: string; dataUrl: string; type: string; category?: string }[] {
+  if (!req) return [];
+  const result: { name: string; dataUrl: string; type: string; category?: string }[] = [];
+  const addedUrls = new Set<string>();
+
+  if (req.attachment_list && req.attachment_list.length > 0) {
+    req.attachment_list.forEach(item => {
+      if (item.dataUrl && !addedUrls.has(item.dataUrl)) {
+        addedUrls.add(item.dataUrl);
+        result.push({
+          name: item.name || 'เอกสารแนบ',
+          dataUrl: item.dataUrl,
+          type: item.type || 'application/octet-stream',
+          category: item.category
+        });
+      }
+    });
+  }
+
+  const rawImages = getRealReceiptImages(req);
+  rawImages.forEach((url, idx) => {
+    if (url && !addedUrls.has(url)) {
+      addedUrls.add(url);
+      let type = 'image/jpeg';
+      let name = (req.receiptNames && req.receiptNames[idx]) || req.receiptName || `เอกสารแนบ_${idx + 1}.jpg`;
+
+      const lower = url.toLowerCase();
+      if (lower.startsWith('data:application/pdf') || lower.includes('.pdf')) {
+        type = 'application/pdf';
+        if (!name.toLowerCase().endsWith('.pdf')) name += '.pdf';
+      } else if (lower.includes('word') || lower.includes('.doc')) {
+        type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        if (!name.toLowerCase().endsWith('.doc') && !name.toLowerCase().endsWith('.docx')) name += '.docx';
+      } else if (lower.includes('excel') || lower.includes('.xls') || lower.includes('.csv')) {
+        type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        if (!name.toLowerCase().endsWith('.xls') && !name.toLowerCase().endsWith('.xlsx') && !name.toLowerCase().endsWith('.csv')) name += '.xlsx';
+      }
+
+      result.push({
+        name,
+        dataUrl: url,
+        type,
+        category: 'ใบเสร็จรับเงิน'
+      });
+    }
+  });
+
+  return result;
+}
+
+export function getSafePreviewUrl(url: string): string {
+  if (!url) return '';
+  if (url.startsWith('data:application/pdf;base64,')) {
+    try {
+      const base64 = url.split(',')[1];
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      console.warn('PDF blob conversion failed:', e);
+      return url;
+    }
+  }
+  return url;
 }
 
 export function mapFilenameToRealReceipt(filename: string, category: string): string {
@@ -1024,96 +1108,128 @@ export function getDbRequests(): ExpenseRequest[] {
   return [];
 }
 
-export function getClearingStatusInfo(req: ExpenseRequest): { label: string; color: string } {
-  if (req.expense_type !== 'clearing') {
-    if (req.status === 'approved') return { label: 'อนุมัติแล้ว', color: 'bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-950/20 dark:text-emerald-400' };
-    if (req.status === 'rejected') return { label: 'ปฏิเสธ', color: 'bg-rose-50 text-rose-700 border border-rose-100 dark:bg-rose-950/20 dark:text-rose-400' };
-    if (req.status === 'pending') return { label: 'รออนุมัติ', color: 'bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-950/20 dark:text-amber-400' };
-    return { label: 'แบบร่าง', color: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' };
+export function getRealWorkflowStepInfo(req: ExpenseRequest): { 
+  label: string; 
+  color: string;
+  stepNumber: number;
+  totalSteps: number;
+  currentApproverName: string;
+  currentApproverRole: string;
+  statusText: string;
+} {
+  if (!req) {
+    return {
+      label: 'ไม่พบข้อมูล',
+      color: 'bg-slate-100 text-slate-600',
+      stepNumber: 0,
+      totalSteps: 0,
+      currentApproverName: '-',
+      currentApproverRole: '-',
+      statusText: '-'
+    };
   }
 
   if (req.status === 'draft') {
     return {
-      label: 'แบบร่าง (Draft)',
-      color: 'bg-slate-100 text-slate-600 border border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'
+      label: '📝 แบบร่าง',
+      color: 'bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700',
+      stepNumber: 0,
+      totalSteps: 0,
+      currentApproverName: '-',
+      currentApproverRole: 'ยังไม่ส่งอนุมัติ',
+      statusText: 'แบบร่าง (ผู้ขอเบิกยังไม่ได้ยื่นคำขออนุมัติ)'
     };
   }
 
-  if (req.status === 'pending') {
+  if (req.status === 'cancelled') {
     return {
-      label: '🟡 รออนุมัติการเคลียร์ (Pending Clearing Approval)',
-      color: 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900'
+      label: '🚫 ยกเลิกแล้ว',
+      color: 'bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-800 dark:text-slate-400',
+      stepNumber: 0,
+      totalSteps: 0,
+      currentApproverName: '-',
+      currentApproverRole: 'ยกเลิกเอกสาร',
+      statusText: 'เอกสารถูกยกเลิกเรียบร้อยแล้ว'
     };
   }
 
   if (req.status === 'rejected') {
+    const rejectedStep = (req.approvalHistory || []).find(s => s.status === 'rejected');
     return {
-      label: '❌ ไม้อนุมัติการเคลียร์',
-      color: 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/20 dark:text-rose-400'
+      label: '❌ ไม้อนุมัติ',
+      color: 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/25 dark:text-rose-400 dark:border-rose-900',
+      stepNumber: 0,
+      totalSteps: req.approvalHistory?.length || 1,
+      currentApproverName: rejectedStep?.approverName || 'ผู้อนุมัติ',
+      currentApproverRole: rejectedStep?.approverRole || 'ปฏิเสธคำขอ',
+      statusText: `ถูกปฏิเสธการอนุมัติโดย ${rejectedStep?.approverName || 'ผู้อนุมัติ'}`
     };
   }
 
-  if (req.status === 'payroll_deduction' || req.settlement_type === 'payroll_deduction') {
+  if (req.status === 'approved' || (req.status as string) === 'cleared') {
+    const total = req.approvalHistory?.length || 1;
     return {
-      label: '🔴 Payroll Deduction',
-      color: 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/25 dark:text-rose-400 dark:border-rose-900'
-    };
-  }
-
-  if ((req.status as string) === 'cleared') {
-    return {
-      label: '🟢 Cleared',
-      color: 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900'
+      label: '🟢 อนุมัติเสร็จสิ้น (ครบทุกขั้นตอน)',
+      color: 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900',
+      stepNumber: total,
+      totalSteps: total,
+      currentApproverName: 'อนุมัติแล้ว',
+      currentApproverRole: 'เสร็จสิ้นกระบวนการ',
+      statusText: 'ผ่านการอนุมัติครบทุกขั้นตอนแล้ว'
     };
   }
 
   if ((req.status as string) === 'pending_refund') {
     return {
-      label: '🟡 รอตรวจสอบยอดโอนคืน (Pending Refund Confirmation)',
-      color: 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800'
+      label: '🟡 รอการเงินตรวจสอบสลิปคืนเงิน',
+      color: 'bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/20 dark:text-amber-300 dark:border-amber-900',
+      stepNumber: req.approvalHistory?.length || 1,
+      totalSteps: req.approvalHistory?.length || 1,
+      currentApproverName: 'ฝ่ายการเงิน/บัญชี',
+      currentApproverRole: 'ตรวจสอบการโอนคืน',
+      statusText: 'ผู้เบิกแนบสลิปคืนเงินแล้ว กำลังรอฝ่ายการเงินตรวจสอบ'
     };
   }
 
-  const allRequests = getDbRequests();
-  const matchedAdvance = req.advance_id ? allRequests.find(r => r.id === req.advance_id) : undefined;
-  const advAmount = matchedAdvance ? (matchedAdvance.amount || 0) : 0;
-  const spentAmount = req.amount || 0;
-  const diff = spentAmount - advAmount;
+  // Pending approval status
+  const steps = req.approvalHistory || [];
+  const pendingIndex = steps.findIndex(s => s.status === 'pending');
+  const totalSteps = Math.max(steps.length, 1);
+  
+  let currentApproverName = 'ผู้อนุมัติประจำแผนก';
+  let currentApproverRole = 'ผู้อนุมัติ';
+  let stepNum = 1;
 
-  if (diff < 0) {
-    if ((req.status as string) === 'refunded' || (req.status as string) === 'cleared') {
-      return {
-        label: '🟢 Cleared',
-        color: 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900'
-      };
-    } else if ((req.status as string) === 'pending_refund') {
-      return {
-        label: '🟡 รอตรวจสอบยอดโอนคืน (Pending Refund Confirmation)',
-        color: 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800'
-      };
-    } else {
-      return {
-        label: '🟠 รอคืนเงินบริษัท (Waiting for Refund)',
-        color: 'bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900'
-      };
+  if (pendingIndex !== -1) {
+    stepNum = pendingIndex + 1;
+    currentApproverName = steps[pendingIndex].approverName;
+    currentApproverRole = steps[pendingIndex].approverRole;
+  } else if (req.current_approver) {
+    const dbUsers = getDbUsers();
+    const match = dbUsers.find(u => u.user_id === req.current_approver);
+    if (match) {
+      currentApproverName = match.name;
+      currentApproverRole = match.position || match.approval_level || 'ผู้อนุมัติ';
     }
-  } else if (diff > 0) {
-    if ((req.status as string) === 'cleared') {
-      return {
-        label: '🟢 Cleared',
-        color: 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900'
-      };
-    }
-    return {
-      label: '🔵 Additional Reimbursement',
-      color: 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900'
-    };
-  } else {
-    return {
-      label: '🟢 Cleared',
-      color: 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900'
-    };
   }
+
+  return {
+    label: `⏳ ขั้นตอนที่ ${stepNum}/${totalSteps}: รอ ${currentApproverRole} (${currentApproverName})`,
+    color: 'bg-amber-50 text-amber-800 border border-amber-200 dark:bg-amber-950/20 dark:text-amber-300 dark:border-amber-900',
+    stepNumber: stepNum,
+    totalSteps: totalSteps,
+    currentApproverName,
+    currentApproverRole,
+    statusText: `เอกสารอยู่ในขั้นตอนที่ ${stepNum} จาก ${totalSteps}: กำลังรอการพิจารณาโดย ${currentApproverName} (${currentApproverRole})`
+  };
+}
+
+export function getClearingStatusInfo(req: ExpenseRequest): { label: string; color: string } {
+  const stepInfo = getRealWorkflowStepInfo(req);
+  return {
+    label: stepInfo.label,
+    color: stepInfo.color
+  };
 }
 
 

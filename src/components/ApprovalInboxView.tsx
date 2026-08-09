@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { openPdfPreview } from '../lib/pdf-preview';
 import { 
   Check, 
   X, 
@@ -11,11 +12,14 @@ import {
   ShieldCheck,
   Eye,
   GitBranch,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Printer,
+  Download,
+  ExternalLink
 } from 'lucide-react';
 import { ExpenseRequest, UserProfile } from '../types';
 import { CATEGORIES_CONFIG } from '../data/masterData';
-import { getDbUsers, getRealReceiptImages, getClearingStatusInfo, addEnterpriseAuditLog } from '../data/db';
+import { getDbUsers, getRealReceiptImages, getClearingStatusInfo, addEnterpriseAuditLog, getSafePreviewUrl } from '../data/db';
 
 interface ApprovalInboxViewProps {
   requests: ExpenseRequest[];
@@ -50,12 +54,32 @@ export default function ApprovalInboxView({
                   currentUser.approval_level === 'Administrator' || 
                   currentUser.username === 'Okay9999';
 
+  const [inboxTab, setInboxTab] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+
   const pendingRequests = requests.filter(r => {
     if (r.status !== 'pending') return false;
     if (isAdmin) return true; // Admin gets full system inbox view
     if (!r.current_approver) return true; // Unassigned pending requests land in approver inbox
     return r.current_approver === currentUser.user_id;
   });
+
+  const approvedRequests = requests.filter(r => {
+    const s = (r.status || '').toLowerCase();
+    return s === 'approved' || s === 'cleared' || s === 'paid';
+  });
+
+  const rejectedRequests = requests.filter(r => {
+    const s = (r.status || '').toLowerCase();
+    return s === 'rejected';
+  });
+
+  const displayRequests = useMemo(() => {
+    if (inboxTab === 'pending') return pendingRequests;
+    if (inboxTab === 'approved') return approvedRequests;
+    if (inboxTab === 'rejected') return rejectedRequests;
+    return requests.filter(r => r.status !== 'draft');
+  }, [inboxTab, pendingRequests, approvedRequests, rejectedRequests, requests]);
+
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectComment, setRejectComment] = useState('');
   const [approvingId, setApprovingId] = useState<string | null>(null);
@@ -91,14 +115,14 @@ export default function ApprovalInboxView({
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">กล่องจดหมายงานรออนุมัติ</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">ตรวจสอบและพิจารณาคำขอเบิกเงินจากสมาชิกในแผนกที่มีสิทธิ์การประเมินผล</p>
         </div>
-        {pendingRequests.length > 0 && (
+        {displayRequests.length > 0 && (
           <button
             id="inbox-export-btn"
             onClick={async () => {
               try {
                 const { exportExpenseRequestsToExcel } = await import('../utils/excelExport');
                 await exportExpenseRequestsToExcel(
-                  pendingRequests,
+                  displayRequests,
                   `รายงานสรุปคิวรออนุมัติ: คุณ${currentUser.name}`,
                   currentUser.name,
                   true
@@ -110,20 +134,75 @@ export default function ApprovalInboxView({
             className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/10 self-start sm:self-auto"
           >
             <FileSpreadsheet className="h-4 w-4" />
-            <span>Export Pending Queue (.xlsx)</span>
+            <span>Export Queue (.xlsx)</span>
           </button>
         )}
       </div>
 
-      {pendingRequests.length === 0 ? (
+      {/* Inbox Filter Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-100 dark:border-slate-800">
+        <button
+          onClick={() => setInboxTab('pending')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+            inboxTab === 'pending'
+              ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+          }`}
+        >
+          <span>⏳ งานรออนุมัติ</span>
+          <span className="px-1.5 py-0.5 text-[10px] bg-white/20 rounded-full font-mono">{pendingRequests.length}</span>
+        </button>
+
+        <button
+          onClick={() => setInboxTab('approved')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+            inboxTab === 'approved'
+              ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+          }`}
+        >
+          <span>🟢 อนุมัติแล้ว</span>
+          <span className="px-1.5 py-0.5 text-[10px] bg-white/20 rounded-full font-mono">{approvedRequests.length}</span>
+        </button>
+
+        <button
+          onClick={() => setInboxTab('rejected')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+            inboxTab === 'rejected'
+              ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+          }`}
+        >
+          <span>🔴 ปฏิเสธแล้ว</span>
+          <span className="px-1.5 py-0.5 text-[10px] bg-white/20 rounded-full font-mono">{rejectedRequests.length}</span>
+        </button>
+
+        <button
+          onClick={() => setInboxTab('all')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+            inboxTab === 'all'
+              ? 'bg-primary-600 text-white shadow-md shadow-primary-600/20'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+          }`}
+        >
+          <span>📋 คำขอทั้งหมด</span>
+          <span className="px-1.5 py-0.5 text-[10px] bg-white/20 rounded-full font-mono">{requests.filter(r => r.status !== 'draft').length}</span>
+        </button>
+      </div>
+
+      {displayRequests.length === 0 ? (
         <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm">
           <ShieldCheck className="h-12 w-12 text-emerald-500 mx-auto mb-3" />
-          <h3 className="font-bold text-slate-900 dark:text-white">เยี่ยมมาก! ไม่มีงานค้างสะสม</h3>
-          <p className="text-slate-400 text-sm mt-1">คำขอเบิกเงินทั้งหมดของพนักงานได้รับการดำเนินการครบถ้วนเรียบร้อยแล้ว</p>
+          <h3 className="font-bold text-slate-900 dark:text-white">
+            {inboxTab === 'pending' ? 'เยี่ยมมาก! ไม่มีงานค้างสะสม' : 'ไม่พบข้อมูลคำขอในหมวดหมู่นี้'}
+          </h3>
+          <p className="text-slate-400 text-sm mt-1">
+            {inboxTab === 'pending' ? 'คำขอเบิกเงินทั้งหมดของพนักงานได้รับการดำเนินการครบถ้วนเรียบร้อยแล้ว' : 'ยังไม่มีคำขอที่ตรงตามเงื่อนไขตัวกรองนี้'}
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
-          {pendingRequests.map((req) => {
+          {displayRequests.map((req) => {
             const catConfig = CATEGORIES_CONFIG[req.category] || CATEGORIES_CONFIG.other;
             const isRejecting = rejectingId === req.id;
             const isApproving = approvingId === req.id;
@@ -214,39 +293,79 @@ export default function ApprovalInboxView({
                     {/* Real thumbnails */}
                     <div className="flex flex-wrap gap-1.5 mt-1">
                       {getRealReceiptImages(req).map((imgUrl, i) => {
-                        const urlStr = imgUrl || '';
-                        const isPdf = (urlStr || '').startsWith('data:application/pdf') || (urlStr || '').toLowerCase().includes('.pdf') || (urlStr || '').startsWith('blob:application/pdf');
-                        return isPdf ? (
-                          <div 
-                            key={i} 
-                            className="relative h-10 w-10 rounded-lg overflow-hidden border border-rose-200 dark:border-rose-950 bg-rose-50 dark:bg-rose-950/20 flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-rose-500 hover:ring-offset-1 dark:hover:ring-offset-slate-900 transition-all text-rose-600 dark:text-rose-400"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedImage(imgUrl);
-                            }}
-                            title="คลิกเพื่อพรีวิวไฟล์ PDF แนบ"
-                          >
-                            <FileText className="h-5 w-5" />
-                            <span className="text-[7px] font-black uppercase tracking-wider mt-0.5">PDF</span>
-                          </div>
-                        ) : (
-                          <div 
-                            key={i} 
-                            className="relative h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-pointer hover:ring-2 hover:ring-primary-500 hover:ring-offset-1 dark:hover:ring-offset-slate-900 transition-all"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedImage(imgUrl);
-                            }}
-                            title="คลิกเพื่อพรีวิวรูปภาพ"
-                          >
-                            <img 
-                              src={imgUrl || ''} 
-                              className="h-full w-full object-cover" 
-                              alt="Receipt thumbnail" 
-                              referrerPolicy="no-referrer"
-                            />
-                          </div>
-                        );
+                        const urlStr = (imgUrl || '').toLowerCase();
+                        const isPdf = urlStr.startsWith('data:application/pdf') || urlStr.includes('.pdf') || urlStr.startsWith('blob:application/pdf');
+                        const isDoc = urlStr.includes('word') || urlStr.includes('msword') || urlStr.includes('.doc');
+                        const isXls = urlStr.includes('excel') || urlStr.includes('spreadsheet') || urlStr.includes('.xls') || urlStr.includes('.csv');
+
+                        if (isPdf) {
+                          return (
+                            <div 
+                              key={i} 
+                              className="relative h-10 w-10 rounded-lg overflow-hidden border border-rose-200 dark:border-rose-950 bg-rose-50 dark:bg-rose-950/20 flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-rose-500 hover:ring-offset-1 dark:hover:ring-offset-slate-900 transition-all text-rose-600 dark:text-rose-400"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedImage(imgUrl);
+                              }}
+                              title="คลิกเพื่อพรีวิวไฟล์ PDF แนบ"
+                            >
+                              <FileText className="h-5 w-5" />
+                              <span className="text-[7px] font-black uppercase tracking-wider mt-0.5">PDF</span>
+                            </div>
+                          );
+                        } else if (isDoc) {
+                          return (
+                            <div 
+                              key={i} 
+                              className="relative h-10 w-10 rounded-lg overflow-hidden border border-blue-200 dark:border-blue-950 bg-blue-50 dark:bg-blue-950/20 flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-blue-500 hover:ring-offset-1 dark:hover:ring-offset-slate-900 transition-all text-blue-600 dark:text-blue-400"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedImage(imgUrl);
+                              }}
+                              title="คลิกเพื่อพรีวิวเอกสาร Word"
+                            >
+                              <FileText className="h-5 w-5" />
+                              <span className="text-[7px] font-black uppercase tracking-wider mt-0.5">DOCX</span>
+                            </div>
+                          );
+                        } else if (isXls) {
+                          return (
+                            <div 
+                              key={i} 
+                              className="relative h-10 w-10 rounded-lg overflow-hidden border border-emerald-200 dark:border-emerald-950 bg-emerald-50 dark:bg-emerald-950/20 flex flex-col items-center justify-center cursor-pointer hover:ring-2 hover:ring-emerald-500 hover:ring-offset-1 dark:hover:ring-offset-slate-900 transition-all text-emerald-600 dark:text-emerald-400"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedImage(imgUrl);
+                              }}
+                              title="คลิกเพื่อพรีวิวตาราง Excel/CSV"
+                            >
+                              <FileSpreadsheet className="h-5 w-5" />
+                              <span className="text-[7px] font-black uppercase tracking-wider mt-0.5">EXCEL</span>
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div 
+                              key={i} 
+                              className="relative h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 cursor-pointer hover:ring-2 hover:ring-primary-500 hover:ring-offset-1 dark:hover:ring-offset-slate-900 transition-all"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedImage(imgUrl);
+                              }}
+                              title="คลิกเพื่อพรีวิวเอกสาร/รูปภาพ"
+                            >
+                              <img 
+                                src={imgUrl || ''} 
+                                className="h-full w-full object-cover" 
+                                alt="Receipt thumbnail" 
+                                referrerPolicy="no-referrer"
+                                onError={(e) => {
+                                  e.currentTarget.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&auto=format&fit=crop&q=80';
+                                }}
+                              />
+                            </div>
+                          );
+                        }
                       })}
                     </div>
                   </div>
@@ -315,45 +434,57 @@ export default function ApprovalInboxView({
                   </button>
 
                   <div className="flex items-center gap-2">
-                    {!isRejecting && !isApproving && editingAmountId !== req.id && (
-                      <>
-                        <button 
-                          id={`edit-trigger-${req.id}`}
-                          onClick={() => {
-                            setEditingAmountId(req.id);
-                            setEditAmount(req.amount.toString());
-                            setEditReason('');
-                            setRejectingId(null);
-                            setApprovingId(null);
-                          }}
-                          className="flex items-center gap-1 px-4 py-2 text-xs font-bold text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 border border-amber-200 rounded-xl transition-all"
-                        >
-                          <GitBranch className="h-3.5 w-3.5" />
-                          <span>แก้ไขยอดเงิน</span>
-                        </button>
-                        <button 
-                          id={`reject-trigger-${req.id}`}
-                          onClick={() => {
-                            setRejectingId(req.id);
-                            setApprovingId(null);
-                          }}
-                          className="flex items-center gap-1 px-4 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 border border-rose-200 rounded-xl transition-all"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                          <span>ปฏิเสธคำขอ</span>
-                        </button>
-                        <button 
-                          id={`approve-trigger-${req.id}`}
-                          onClick={() => {
-                            setApprovingId(req.id);
-                            setRejectingId(null);
-                          }}
-                          className="flex items-center gap-1 px-4 py-2 text-xs font-extrabold bg-green-700 hover:bg-green-600 active:bg-green-800 text-white rounded-xl shadow-md shadow-green-700/10 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                          <span>อนุมัติคำขอ</span>
-                        </button>
-                      </>
+                    {req.status === 'pending' ? (
+                      !isRejecting && !isApproving && editingAmountId !== req.id && (
+                        <>
+                          <button 
+                            id={`edit-trigger-${req.id}`}
+                            onClick={() => {
+                              setEditingAmountId(req.id);
+                              setEditAmount(req.amount.toString());
+                              setEditReason('');
+                              setRejectingId(null);
+                              setApprovingId(null);
+                            }}
+                            className="flex items-center gap-1 px-4 py-2 text-xs font-bold text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 border border-amber-200 rounded-xl transition-all"
+                          >
+                            <GitBranch className="h-3.5 w-3.5" />
+                            <span>แก้ไขยอดเงิน</span>
+                          </button>
+                          <button 
+                            id={`reject-trigger-${req.id}`}
+                            onClick={() => {
+                              setRejectingId(req.id);
+                              setApprovingId(null);
+                            }}
+                            className="flex items-center gap-1 px-4 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 border border-rose-200 rounded-xl transition-all"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            <span>ปฏิเสธคำขอ</span>
+                          </button>
+                          <button 
+                            id={`approve-trigger-${req.id}`}
+                            onClick={() => {
+                              setApprovingId(req.id);
+                              setRejectingId(null);
+                            }}
+                            className="flex items-center gap-1 px-4 py-2 text-xs font-extrabold bg-green-700 hover:bg-green-600 active:bg-green-800 text-white rounded-xl shadow-md shadow-green-700/10 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            <span>อนุมัติคำขอ</span>
+                          </button>
+                        </>
+                      )
+                    ) : req.status === 'approved' || req.status === 'cleared' || req.status === 'paid' ? (
+                      <div className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs">
+                        <Check className="h-4 w-4 text-emerald-600" />
+                        <span>ผ่านการอนุมัติแล้ว (Approved)</span>
+                      </div>
+                    ) : (
+                      <div className="px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs">
+                        <X className="h-4 w-4 text-rose-600" />
+                        <span>ปฏิเสธคำขอแล้ว (Rejected)</span>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -608,34 +739,154 @@ export default function ApprovalInboxView({
                     : 'พรีวิวภาพถ่ายหลักฐานแนบ'}
                 </span>
               </span>
-              <button
-                type="button"
-                onClick={() => setSelectedImage(null)}
-                className="text-rose-500 hover:text-white hover:bg-rose-500 dark:text-rose-400 dark:hover:text-white p-2 rounded-xl bg-rose-50 dark:bg-rose-950/20 shadow-sm font-extrabold transition-all duration-150 cursor-pointer h-9 w-9 flex items-center justify-center"
-                title="ปิด"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const imgUrl = selectedImage || '';
+                    const safeUrl = getSafePreviewUrl(imgUrl);
+                    if (imgUrl.startsWith('data:application/pdf') || imgUrl.toLowerCase().includes('.pdf')) {
+                      openPdfPreview(`
+                        <html>
+                          <head><title>พิมพ์เอกสารแนบ PDF</title></head>
+                          <body style="margin:0;padding:0;background:#fff;">
+                            <iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe>
+                          </body>
+                        </html>
+                      `, 'พิมพ์หลักฐานแนบ (PDF)');
+                    } else {
+                      openPdfPreview(`
+                        <html>
+                          <head>
+                            <title>พิมพ์หลักฐานแนบ</title>
+                            <style>
+                              body { margin: 0; padding: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; background: #fff; }
+                              img { max-width: 100%; max-height: 85vh; border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
+                              .header { margin-bottom: 15px; text-align: center; }
+                              h3 { margin: 0; font-size: 18px; color: #1e293b; }
+                              p { margin: 4px 0 0 0; font-size: 12px; color: #64748b; }
+                            </style>
+                          </head>
+                          <body>
+                            <div class="header">
+                              <h3>หลักฐานประกอบการพิจารณาอนุมัติ</h3>
+                              <p>วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH')}</p>
+                            </div>
+                            <img src="${safeUrl}" alt="หลักฐานแนบ" />
+                          </body>
+                        </html>
+                      `, 'หลักฐานแนบ-พิจารณาอนุมัติ');
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  title="พิมพ์หลักฐานแนบ"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  <span>พิมพ์หลักฐาน</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const safeUrl = getSafePreviewUrl(selectedImage || '');
+                    const win = window.open();
+                    if (win) {
+                      win.document.write(`<html><head><title>หลักฐานแนบ</title></head><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#0f172a;"><iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe></body></html>`);
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                  title="เปิดในแท็บใหม่"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>เปิดหน้าใหม่</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedImage(null)}
+                  className="text-rose-500 hover:text-white hover:bg-rose-500 dark:text-rose-400 dark:hover:text-white p-2 rounded-xl bg-rose-50 dark:bg-rose-950/20 shadow-sm font-extrabold transition-all duration-150 cursor-pointer h-9 w-9 flex items-center justify-center ml-1"
+                  title="ปิด"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
             
             {/* Content pane */}
-            <div className="flex-1 p-4 bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden">
-              {(selectedImage || '').startsWith('data:application/pdf') || (selectedImage || '').toLowerCase().includes('.pdf') || (selectedImage || '').startsWith('blob:application/pdf') ? (
-                <iframe
-                  src={selectedImage}
-                  className="w-full h-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-                  title="PDF attachment preview"
-                />
-              ) : (
-                <div className="max-w-full max-h-full overflow-auto flex items-center justify-center">
-                  <img
-                    src={selectedImage}
-                    className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-md"
-                    alt="Full size evidence"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-              )}
+            <div className="flex-1 p-4 bg-slate-100 dark:bg-slate-950 flex items-center justify-center overflow-hidden min-h-[450px]">
+              {(() => {
+                const imgUrl = selectedImage || '';
+                const urlLower = imgUrl.toLowerCase();
+                const safeUrl = getSafePreviewUrl(imgUrl);
+
+                const isPdf = urlLower.startsWith('data:application/pdf') || urlLower.includes('.pdf') || urlLower.startsWith('blob:application/pdf');
+                const isDoc = urlLower.includes('word') || urlLower.includes('msword') || urlLower.includes('.doc');
+                const isXls = urlLower.includes('excel') || urlLower.includes('spreadsheet') || urlLower.includes('.xls') || urlLower.includes('.csv');
+                const isImage = urlLower.startsWith('data:image/') || urlLower.startsWith('http') || urlLower.includes('unsplash') || /\.(jpg|jpeg|png|webp|gif|svg|bmp)(\?.*)?$/.test(urlLower);
+
+                if (isPdf) {
+                  return (
+                    <iframe
+                      src={safeUrl}
+                      className="w-full h-full min-h-[70vh] rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
+                      title="PDF attachment preview"
+                    />
+                  );
+                } else if (isDoc || isXls || (!isImage && imgUrl.startsWith('data:'))) {
+                  return (
+                    <div className="max-w-xl w-full p-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl text-center space-y-6">
+                      <div className="mx-auto w-20 h-20 rounded-2xl bg-primary-50 dark:bg-primary-950/40 text-primary-600 dark:text-primary-400 flex items-center justify-center border border-primary-200/50">
+                        {isXls ? <FileSpreadsheet className="h-10 w-10 text-emerald-600" /> : <FileText className="h-10 w-10 text-blue-600" />}
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                          {isXls ? 'เอกสารตารางคำนวณ (Excel / CSV)' : isDoc ? 'เอกสารข้อความ (Word Document)' : 'เอกสารหลักฐานแนบ (Document File)'}
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          เอกสารไฟล์ต้นฉบับถูกแนบมาในระบบอย่างสมบูรณ์ ผู้อนุมัติสามารถกดเปิดอ่าน ดาวน์โหลด หรือพิมพ์ใบสรุปเอกสารได้ทันที
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                        <a 
+                          href={safeUrl} 
+                          download="attached_evidence_document"
+                          className="px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                        >
+                          <Download className="h-4 w-4" />
+                          <span>ดาวน์โหลดเอกสาร</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const win = window.open();
+                            if (win) {
+                              win.document.write(`<html><head><title>เอกสารแนบ</title></head><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#0f172a;"><iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe></body></html>`);
+                            }
+                          }}
+                          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                          <span>เปิดในหน้าต่างใหม่</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="max-w-full max-h-full overflow-auto flex items-center justify-center">
+                      <img
+                        src={safeUrl || ''}
+                        className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-md"
+                        alt="Full size evidence"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          e.currentTarget.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&auto=format&fit=crop&q=80';
+                        }}
+                      />
+                    </div>
+                  );
+                }
+              })()}
             </div>
           </div>
         </div>

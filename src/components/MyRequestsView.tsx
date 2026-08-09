@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { ExpenseRequest, ExpenseCategory, UserProfile } from '../types';
 import { MOCK_RECEIPTS, CATEGORIES_CONFIG } from '../data/masterData';
-import { getDbDepartments, getDbCategories, saveDbCategories, getDbReplacementPolicy, getClearingStatusInfo, getDbRequests, getDbCompanyData } from '../data/db';
+import { getDbDepartments, getDbCategories, saveDbCategories, getDbReplacementPolicy, getClearingStatusInfo, getRealWorkflowStepInfo, getSafePreviewUrl, getDbRequests, getDbCompanyData } from '../data/db';
 import { getLetterheadHtml } from '../utils/letterheadHtml';
 
 
@@ -339,6 +339,23 @@ export default function MyRequestsView({
 
     try {
       let base64Data = fileObj.dataUrl;
+      
+      // If dataUrl is a remote HTTP/HTTPS URL, fetch blob and convert to data URL
+      if (base64Data.startsWith('http://') || base64Data.startsWith('https://')) {
+        try {
+          const fetched = await fetch(base64Data);
+          const blob = await fetched.blob();
+          base64Data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string || '');
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        } catch (fetchErr) {
+          console.warn('Could not pre-convert remote image, sending URL to server:', fetchErr);
+        }
+      }
+
       const commaIdx = base64Data.indexOf(',');
       if (commaIdx !== -1) {
         base64Data = base64Data.substring(commaIdx + 1);
@@ -445,17 +462,12 @@ export default function MyRequestsView({
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
-      if (!validTypes.includes(file.type)) {
-        setOcrError('รองรับเฉพาะไฟล์รูปภาพ (JPG, JPEG, PNG) และไฟล์ PDF เท่านั้น');
-        return;
-      }
 
       await new Promise<void>((resolve) => {
         uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
           const fileObj = {
             name: file.name,
-            type: file.type,
+            type: file.type || 'application/octet-stream',
             size: file.size,
             dataUrl: dataUrl
           };
@@ -463,7 +475,10 @@ export default function MyRequestsView({
           newUploadedFiles.push(fileObj);
           newReceiptUrls.push(dataUrl);
 
-          if (!firstAddedFileObj) {
+          // Check if this file can be scanned by OCR (image or PDF)
+          const fileTypeLower = (file.type || '').toLowerCase();
+          const fileNameLower = (file.name || '').toLowerCase();
+          if (!firstAddedFileObj && (fileTypeLower.startsWith('image/') || fileTypeLower === 'application/pdf' || fileNameLower.endsWith('.pdf'))) {
             firstAddedFileObj = fileObj;
           }
           resolve();
@@ -476,7 +491,7 @@ export default function MyRequestsView({
     setReceiptAttached(newUploadedFiles[0]?.name || null);
     setUploadedFile(newUploadedFiles[0] || null);
 
-    // Run AI OCR on the newly attached first file
+    // Run AI OCR if an image or PDF was attached
     if (firstAddedFileObj) {
       await scanSingleFileWithAI(firstAddedFileObj);
     }
@@ -879,6 +894,18 @@ export default function MyRequestsView({
       advanceAmt = match ? match.amount : 0;
     }
 
+    const compiledAttachments = supportingDocType === 'replacement'
+      ? attachmentList
+      : [
+          ...attachmentList,
+          ...uploadedFiles.map(f => ({
+            name: f.name,
+            dataUrl: f.dataUrl,
+            type: f.type || 'application/octet-stream',
+            category: (otherEvidenceType || 'ใบเสร็จรับเงิน') as any
+          }))
+        ];
+
     const docFields = {
       title,
       amount,
@@ -889,8 +916,8 @@ export default function MyRequestsView({
       employeeRole: currentUser.approval_level || 'General Employee',
       description,
       receiptName: supportingDocType === 'replacement' ? undefined : (uploadedFiles[0] ? uploadedFiles[0].name : (uploadedFile ? uploadedFile.name : undefined)),
-      receiptUrls: supportingDocType === 'replacement' ? [] : (uploadedFiles.length > 0 ? uploadedFiles.map(f => f.dataUrl) : receiptAttachedList),
-      receiptNames: supportingDocType === 'replacement' ? [] : (uploadedFiles.length > 0 ? uploadedFiles.map(f => f.name) : (uploadedFile ? [uploadedFile.name] : [])),
+      receiptUrls: supportingDocType === 'replacement' ? attachmentList.map(a => a.dataUrl) : (uploadedFiles.length > 0 ? uploadedFiles.map(f => f.dataUrl) : receiptAttachedList),
+      receiptNames: supportingDocType === 'replacement' ? attachmentList.map(a => a.name) : (uploadedFiles.length > 0 ? uploadedFiles.map(f => f.name) : (uploadedFile ? [uploadedFile.name] : [])),
       policyStatus,
       policyNotes,
       status: isDraft ? ('draft' as const) : ('pending' as const),
@@ -914,7 +941,7 @@ export default function MyRequestsView({
       replacement_involved: supportingDocType === 'replacement' ? replacementInvolved : undefined,
       replacement_payment_method: supportingDocType === 'replacement' ? replacementPaymentMethod : undefined,
       replacement_remarks: supportingDocType === 'replacement' ? replacementRemarks : undefined,
-      attachment_list: supportingDocType === 'replacement' ? attachmentList : undefined,
+      attachment_list: compiledAttachments,
 
       // VAT/Tax details
       has_vat: hasVat,
@@ -1374,11 +1401,20 @@ export default function MyRequestsView({
                       </td>
                       <td className="p-4">
                         {(() => {
-                          const statusInfo = getClearingStatusInfo(req);
+                          const stepInfo = getRealWorkflowStepInfo(req);
                           return (
-                            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${statusInfo.color}`}>
-                              {statusInfo.label}
-                            </span>
+                            <div className="space-y-1">
+                              <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border inline-block ${stepInfo.color}`}>
+                                {stepInfo.label}
+                              </span>
+                              {stepInfo.currentApproverName !== '-' && stepInfo.currentApproverName !== 'อนุมัติแล้ว' && (
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                                  <span>รออนุมัติ: </span>
+                                  <span className="font-bold text-slate-700 dark:text-slate-200">{stepInfo.currentApproverName}</span>
+                                  <span className="text-[10px] text-slate-400"> ({stepInfo.currentApproverRole})</span>
+                                </p>
+                              )}
+                            </div>
                           );
                         })()}
                       </td>
@@ -1510,7 +1546,7 @@ export default function MyRequestsView({
                           type="file" 
                           id="receipt-file-input"
                           className="hidden"
-                          accept="image/jpeg,image/png,image/jpg,application/pdf"
+                          accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip,.rar,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
                           multiple
                           onChange={(e) => {
                             const files = e.target.files;
@@ -1728,7 +1764,7 @@ export default function MyRequestsView({
                           type="file" 
                           id="other-file-input"
                           className="hidden"
-                          accept="image/jpeg,image/png,image/jpg,application/pdf"
+                          accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip,.rar,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain"
                           multiple
                           onChange={(e) => {
                             const files = e.target.files;

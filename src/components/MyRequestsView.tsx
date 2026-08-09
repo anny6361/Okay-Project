@@ -332,6 +332,104 @@ export default function MyRequestsView({
     }
   }, [category, categoriesList]);
 
+  // Scan single attached file with AI OCR
+  const scanSingleFileWithAI = async (fileObj: { name: string; type: string; size: number; dataUrl: string }) => {
+    setIsScanning(true);
+    setOcrError(null);
+
+    try {
+      let base64Data = fileObj.dataUrl;
+      const commaIdx = base64Data.indexOf(',');
+      if (commaIdx !== -1) {
+        base64Data = base64Data.substring(commaIdx + 1);
+      }
+
+      const response = await fetch('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileData: base64Data,
+          mimeType: fileObj.type || 'image/jpeg'
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server returned ${response.status}: ${errorText}`);
+      }
+
+      const result = await response.json();
+      if (result.success && result.data) {
+        const ocr = result.data;
+        setOcrConfidence(ocr.confidence || 95);
+        setDuplicateWarning(null);
+
+        // Duplicate Check
+        if (ocr.invoiceId) {
+          const allReqs = getDbRequests();
+          const isDup = allReqs.some(r => r.id !== editingId && (r as any).receiptNumber === ocr.invoiceId);
+          if (isDup) {
+            setDuplicateWarning(`ตรวจพบใบเสร็จเลขที่ ${ocr.invoiceId} ถูกเบิกไปแล้วในระบบ!`);
+          }
+        }
+
+        setTitle(ocr.merchant ? `เบิกจ่าย: ${ocr.merchant}` : '');
+        setAmount(ocr.amount || 0);
+        if (ocr.date) {
+          setDate(ocr.date);
+        }
+
+        if (ocr.vat && ocr.vat > 0) {
+          setHasVat(true);
+          setVatAmount(ocr.vat);
+        } else {
+          setHasVat(false);
+          setVatAmount(0);
+        }
+        if (ocr.taxId) {
+          setTaxId(ocr.taxId);
+        } else {
+          setTaxId('');
+        }
+
+        let desc = `นำเข้าข้อมูลอัตโนมัติผ่าน AI OCR\nร้านค้า: ${ocr.merchant}\n`;
+        if (ocr.invoiceId) {
+          desc += `เลขใบเสร็จ: ${ocr.invoiceId}\n`;
+        }
+        if (ocr.vat) {
+          desc += `ภาษีมูลค่าเพิ่ม (VAT): ฿${(ocr.vat || 0).toLocaleString()}\n`;
+        }
+        if (ocr.items && ocr.items.length > 0) {
+          desc += `รายการสินค้า:\n`;
+          ocr.items.forEach((item: any) => {
+            const itemPrice = typeof item.price === 'number' ? item.price : parseFloat(item.price) || 0;
+            desc += `- ${item.name} (฿${itemPrice.toLocaleString()})\n`;
+          });
+        }
+        setDescription(desc);
+
+        // Suggest category
+        const mLower = ocr.merchant ? ocr.merchant.toLowerCase() : '';
+        if (mLower.includes('grab') || mLower.includes('taxi') || mLower.includes('bts') || mLower.includes('mrt') || mLower.includes('ค่าเดินทาง')) {
+          setCategory('travel');
+        } else if (mLower.includes('starbucks') || mLower.includes('อาหาร') || mLower.includes('mk') || mLower.includes('สตาบัคส์') || mLower.includes('food')) {
+          setCategory('meals');
+        } else if (mLower.includes('aws') || mLower.includes('cloud') || mLower.includes('adobe') || mLower.includes('software')) {
+          setCategory('software');
+        } else if (mLower.includes('it') || mLower.includes('jib') || mLower.includes('office') || mLower.includes('อุปกรณ์')) {
+          setCategory('equipment');
+        }
+      } else {
+        throw new Error(result.error || "ไม่สามารถอ่านข้อมูลใบเสร็จได้");
+      }
+    } catch (err: any) {
+      console.error('OCR sub-file failure:', err);
+      setOcrError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
   // Real File OCR processing function using Gemini backend proxy
   const processFileForOCR = async (fileInput: File | FileList) => {
     const isFileList = fileInput instanceof FileList;
@@ -339,148 +437,49 @@ export default function MyRequestsView({
 
     if (files.length === 0) return;
 
-    setIsScanning(true);
     setOcrError(null);
 
     const newUploadedFiles = [...uploadedFiles];
     const newReceiptUrls = [...receiptAttachedList];
+    let firstAddedFileObj: { name: string; type: string; size: number; dataUrl: string } | null = null;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
       if (!validTypes.includes(file.type)) {
         setOcrError('รองรับเฉพาะไฟล์รูปภาพ (JPG, JPEG, PNG) และไฟล์ PDF เท่านั้น');
-        setIsScanning(false);
         return;
       }
 
       await new Promise<void>((resolve) => {
-        uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then(async (dataUrl) => {
-      
-          try {
-            
-            const fileObj = {
-              name: file.name,
-              type: file.type,
-              size: file.size,
-              dataUrl: dataUrl
-            };
+        uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
+          const fileObj = {
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            dataUrl: dataUrl
+          };
 
-            newUploadedFiles.push(fileObj);
-            newReceiptUrls.push(dataUrl);
+          newUploadedFiles.push(fileObj);
+          newReceiptUrls.push(dataUrl);
 
-            // Only run OCR auto-extraction on the first file uploaded overall
-            if (i === 0 && uploadedFiles.length === 0) {
-              setUploadedFile(fileObj);
-              // Read file as base64 for OCR
-              const base64Data = await new Promise((res) => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                  const result = reader.result as string;
-                  const idx = result.indexOf(',');
-                  res(idx !== -1 ? result.substring(idx + 1) : result);
-                };
-                reader.readAsDataURL(file);
-              });
-
-              // Call the server-side API proxy
-              const response = await fetch('/api/ocr', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  fileData: base64Data,
-                  mimeType: file.type
-                })
-              });
-
-              if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Server returned ${response.status}: ${errorText}`);
-              }
-
-              const result = await response.json();
-              if (result.success && result.data) {
-                const ocr = result.data;
-                
-                setOcrConfidence(ocr.confidence || 95); // Default high if not returned
-                setDuplicateWarning(null);
-
-                // Duplicate Check
-                if (ocr.invoiceId) {
-                  const allReqs = getDbRequests();
-                  const isDup = allReqs.some(r => r.id !== editingId && (r as any).receiptNumber === ocr.invoiceId);
-                  if (isDup) {
-                    setDuplicateWarning(`ตรวจพบใบเสร็จเลขที่ ${ocr.invoiceId} ถูกเบิกไปแล้วในระบบ!`);
-                  }
-                }
-
-                setTitle(ocr.merchant ? `เบิกจ่าย: ${ocr.merchant}` : '');
-                setAmount(ocr.amount || 0);
-                if (ocr.date) {
-                  setDate(ocr.date);
-                }
-                
-                if (ocr.vat && ocr.vat > 0) {
-                  setHasVat(true);
-                  setVatAmount(ocr.vat);
-                } else {
-                  setHasVat(false);
-                  setVatAmount(0);
-                }
-                if (ocr.taxId) {
-                  setTaxId(ocr.taxId);
-                } else {
-                  setTaxId('');
-                }
-                
-                let desc = `นำเข้าข้อมูลอัตโนมัติผ่าน AI OCR\nร้านค้า: ${ocr.merchant}\n`;
-                if (ocr.invoiceId) {
-                  desc += `เลขใบเสร็จ: ${ocr.invoiceId}\n`;
-                }
-                if (ocr.vat) {
-                  desc += `ภาษีมูลค่าเพิ่ม (VAT): ฿${(ocr.vat || 0).toLocaleString()}\n`;
-                }
-                if (ocr.items && ocr.items.length > 0) {
-                  desc += `รายการสินค้า:\n`;
-                  ocr.items.forEach((item: any) => {
-                    const itemPrice = typeof item.price === 'number' ? item.price : parseFloat(item.price) || 0;
-                    desc += `- ${item.name} (฿${itemPrice.toLocaleString()})\n`;
-                  });
-                }
-                setDescription(desc);
-
-                // Suggest category
-                const mLower = ocr.merchant ? ocr.merchant.toLowerCase() : '';
-                if (mLower.includes('grab') || mLower.includes('taxi') || mLower.includes('bts') || mLower.includes('mrt') || mLower.includes('ค่าเดินทาง')) {
-                  setCategory('travel');
-                } else if (mLower.includes('starbucks') || mLower.includes('อาหาร') || mLower.includes('mk') || mLower.includes('สตาบัคส์') || mLower.includes('food')) {
-                  setCategory('meals');
-                } else if (mLower.includes('aws') || mLower.includes('cloud') || mLower.includes('adobe') || mLower.includes('software')) {
-                  setCategory('software');
-                } else if (mLower.includes('it') || mLower.includes('jib') || mLower.includes('office') || mLower.includes('อุปกรณ์')) {
-                  setCategory('equipment');
-                }
-              } else {
-                throw new Error(result.error || "OCR Data missing");
-              }
-            }
-            resolve();
-          } catch (err) {
-            console.error('OCR sub-file failure:', err);
-            setOcrError(err instanceof Error ? err.message : String(err));
-            resolve();
+          if (!firstAddedFileObj) {
+            firstAddedFileObj = fileObj;
           }
-        
-    });
+          resolve();
+        });
       });
     }
 
     setUploadedFiles(newUploadedFiles);
     setReceiptAttachedList(newReceiptUrls);
     setReceiptAttached(newUploadedFiles[0]?.name || null);
-    setIsScanning(false);
+    setUploadedFile(newUploadedFiles[0] || null);
+
+    // Run AI OCR on the newly attached first file
+    if (firstAddedFileObj) {
+      await scanSingleFileWithAI(firstAddedFileObj);
+    }
   };
 
   const handleRemoveUploadedFile = () => {
@@ -1522,59 +1521,81 @@ export default function MyRequestsView({
                         />
 
                         {isScanning ? (
-                          <div className="flex flex-col items-center gap-3">
+                          <div className="flex flex-col items-center gap-3 py-4">
                             <Loader2 className="h-7 w-7 text-primary-600 dark:text-primary-400 animate-spin" />
                             <div>
                               <span className="text-xs font-bold text-slate-700 dark:text-slate-300 animate-pulse block">
-                                AI กำลังสแกนและดึงข้อมูล...
+                                AI กำลังสแกนและดึงข้อมูลจากเอกสารแนบ...
                               </span>
                               <span className="text-[9px] text-slate-400 block mt-1 leading-normal">
-                                กำลังแปลงพิกัดและแกะรายละเอียดสินค้าด้วย Gemini 3.5
+                                ประมวลผลภาพใบเสร็จด้วย AI OCR (Gemini 3.6 Flash)
                               </span>
                             </div>
                           </div>
                         ) : uploadedFiles.length > 0 ? (
                           <div className="flex flex-col gap-2.5 w-full">
+                            <div className="flex items-center justify-between px-1">
+                              <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                                📌 เอกสารแนบการเบิก ({uploadedFiles.length} ไฟล์)
+                              </span>
+                            </div>
                             {uploadedFiles.map((fileObj, idx) => (
-                              <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-150 dark:border-slate-750 w-full relative">
+                              <div key={idx} className="flex items-center gap-2.5 p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 w-full relative">
                                 {fileObj.type === 'application/pdf' ? (
-                                  <div className="h-10 w-10 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-[10px] shrink-0">
+                                  <div className="h-12 w-12 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-[11px] shrink-0">
                                     PDF
                                   </div>
                                 ) : (
                                   <img 
                                     src={fileObj.dataUrl} 
                                     alt="Preview" 
-                                    className="h-10 w-10 rounded-lg object-cover shrink-0 border border-slate-100 dark:border-slate-800"
+                                    className="h-12 w-12 rounded-lg object-cover shrink-0 border border-slate-200 dark:border-slate-700"
                                     referrerPolicy="no-referrer"
                                   />
                                 )}
-                                <div className="min-w-0 text-left flex-1">
+                                <div className="min-w-0 text-left flex-1 space-y-1">
                                   <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">{fileObj.name}</p>
-                                  <p className="text-[9px] text-slate-400 mt-0.5">
-                                    {(fileObj.size / 1024).toFixed(1)} KB 
-                                    {idx === 0 && " | ดึงข้อมูลหลัก (OCR)"}
-                                  </p>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-[9px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                                      ✓ แนบไฟล์เป็นหลักฐานการเบิกแล้ว
+                                    </span>
+                                    <span className="text-[9px] text-slate-400">{(fileObj.size / 1024).toFixed(1)} KB</span>
+                                  </div>
                                 </div>
-                                
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const updated = uploadedFiles.filter((_, i) => i !== idx);
-                                    setUploadedFiles(updated);
-                                    const updatedUrls = receiptAttachedList.filter((_, i) => i !== idx);
-                                    setReceiptAttachedList(updatedUrls);
-                                    if (idx === 0) {
-                                      setUploadedFile(updated[0] || null);
-                                      setReceiptAttached(updated[0]?.name || null);
-                                    }
-                                  }}
-                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-all"
-                                  title="ลบไฟล์นี้"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      scanSingleFileWithAI(fileObj);
+                                    }}
+                                    className="px-2 py-1 bg-primary-100 hover:bg-primary-200 text-primary-800 dark:bg-primary-900/40 dark:text-primary-300 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                    title="ให้ AI อ่านและสกัดข้อมูลจากภาพนี้"
+                                  >
+                                    <Sparkles className="h-3 w-3 text-primary-600 dark:text-primary-400" />
+                                    <span>ให้ AI อ่านรูปนี้</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const updated = uploadedFiles.filter((_, i) => i !== idx);
+                                      setUploadedFiles(updated);
+                                      const updatedUrls = receiptAttachedList.filter((_, i) => i !== idx);
+                                      setReceiptAttachedList(updatedUrls);
+                                      if (idx === 0) {
+                                        setUploadedFile(updated[0] || null);
+                                        setReceiptAttached(updated[0]?.name || null);
+                                      }
+                                    }}
+                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-all cursor-pointer"
+                                    title="ลบไฟล์นี้"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
                               </div>
                             ))}
                             <button
@@ -1585,7 +1606,7 @@ export default function MyRequestsView({
                               }}
                               className="text-[11px] font-bold text-primary-600 hover:underline flex items-center justify-center gap-1 mt-1 cursor-pointer"
                             >
-                              + เพิ่มไฟล์พยานหลักฐานแนบอื่น
+                              + เพิ่มไฟล์ภาพ/PDF แนบเพิ่มเติม
                             </button>
                           </div>
                         ) : (

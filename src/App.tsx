@@ -193,10 +193,10 @@ export default function App() {
     loadDatabase();
   }, [loadDatabase]);
 
-  // Save state to localStorage
+  // Save state to Firestore and localStorage
   const saveState = (updatedRequests: ExpenseRequest[], updatedBudgets?: DepartmentBudget[]) => {
     setRequests(updatedRequests);
-    // localStorage.setItem('okey_requests', JSON.stringify(updatedRequests));
+    saveToFirestore('okey_requests', updatedRequests);
 
     const dbDepts = getDbDepartments();
     const baseBudgets = updatedBudgets || budgets;
@@ -227,7 +227,7 @@ export default function App() {
     });
 
     setBudgets(computedBudgets);
-    // localStorage.setItem('okey_budgets', JSON.stringify(computedBudgets));
+    saveToFirestore('okey_budgets', computedBudgets);
   };
 
   // Toggle Dark Mode
@@ -247,6 +247,7 @@ export default function App() {
     
     // Look up creator's workflow chain from approval rules database table
     const chain = getWorkflowChain(creatorId);
+    const dbUsers = getDbUsers();
     
     const initialSteps: ApprovalStep[] = [];
     let current_approver: string | undefined = undefined;
@@ -258,20 +259,31 @@ export default function App() {
         current_approver = chain[0].approverId;
         next_approver = chain[1]?.approverId || null;
         
-        // Lookup approver details to populate visual tracking
-        const dbUsers = getDbUsers();
         const firstApproverUser = dbUsers.find(u => u.user_id === current_approver);
-        
         initialSteps.push({
           id: `step-${nextId}-1`,
           approverName: firstApproverUser?.name || 'ผู้อนุมัติขั้นแรก',
-          approverRole: firstApproverUser?.approval_level || 'Level 1 Approver',
+          approverRole: firstApproverUser?.position || firstApproverUser?.approval_level || 'Level 1 Approver',
           status: 'pending',
           date: new Date().toISOString().split('T')[0]
         });
       } else {
-        // No chain configured - direct auto-approval
-        finalStatus = 'approved';
+        // No explicit user rule configured - fallback to department manager/admin so request goes to approver inbox
+        const defaultApprover = dbUsers.find(u => 
+          (u.role === 'Administrator' || u.approval_level === 'Administrator' || u.approval_level === 'Level 1' || u.approval_level === 'Level 2') && 
+          u.user_id !== creatorId
+        ) || dbUsers.find(u => u.role === 'Administrator' || u.approval_level === 'Administrator' || u.username === 'Okay9999') || dbUsers[0];
+
+        current_approver = defaultApprover ? defaultApprover.user_id : 'user-superadmin';
+        finalStatus = 'pending';
+
+        initialSteps.push({
+          id: `step-${nextId}-1`,
+          approverName: defaultApprover?.name || 'ผู้จัดการแผนก / ผู้ดูแลระบบ',
+          approverRole: defaultApprover?.position || defaultApprover?.approval_level || 'ผู้อนุมัติประจำแผนก',
+          status: 'pending',
+          date: new Date().toISOString().split('T')[0]
+        });
       }
     }
 

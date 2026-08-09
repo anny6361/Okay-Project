@@ -111,10 +111,32 @@ export function setupFirestoreSync() {
 }
 
 export async function saveToFirestore(localKey: string, data: any) {
-  DB_CACHE[localKey] = data; // Optimistic
+  DB_CACHE[localKey] = data; // Optimistic memory cache
+  
+  // Always update localStorage as local persistence fallback
+  try {
+    localStorage.setItem(localKey, JSON.stringify(data));
+  } catch (e) {
+    console.warn(`localStorage save error for ${localKey}:`, e);
+  }
+
   globalRenderTrigger();
 
   try {
+    if (localKey === 'okey_requests') {
+      // Save requests individually to handle large base64 image receipts without hitting batch size limits
+      for (const req of data) {
+        if (!req.id) continue;
+        const targetColl = req.expense_type === 'advance' ? 'advanceRequests' : req.expense_type === 'clearing' ? 'advanceClearings' : 'expenseRequests';
+        try {
+          await setDoc(doc(db, targetColl, req.id), req, { merge: true });
+        } catch (docErr) {
+          console.error(`Failed to save individual request ${req.id} to Firestore:`, docErr);
+        }
+      }
+      return;
+    }
+
     const batch = writeBatch(db);
     
     if (localKey === 'okey_db_users') {
@@ -128,18 +150,6 @@ export async function saveToFirestore(localKey: string, data: any) {
     else if (localKey === 'okey_db_departments') {
       data.forEach((d: any) => {
         if (d.id) batch.set(doc(db, 'departments', d.id), d, { merge: true });
-      });
-    }
-    else if (localKey === 'okey_requests') {
-      data.forEach((req: any) => {
-        if (!req.id) return;
-        if (req.expense_type === 'advance') {
-          batch.set(doc(db, 'advanceRequests', req.id), req, { merge: true });
-        } else if (req.expense_type === 'clearing') {
-          batch.set(doc(db, 'advanceClearings', req.id), req, { merge: true });
-        } else {
-          batch.set(doc(db, 'expenseRequests', req.id), req, { merge: true });
-        }
       });
     }
     else if (localKey === 'okey_db_enterprise_audit_logs') {
@@ -174,5 +184,28 @@ export async function saveToFirestore(localKey: string, data: any) {
 }
 
 export function getFromCache(localKey: string, defaultValue: any = null) {
+  if (DB_CACHE[localKey] !== undefined && DB_CACHE[localKey] !== null) {
+    if (Array.isArray(DB_CACHE[localKey]) && DB_CACHE[localKey].length > 0) {
+      return DB_CACHE[localKey];
+    }
+    if (!Array.isArray(DB_CACHE[localKey]) && Object.keys(DB_CACHE[localKey]).length > 0) {
+      return DB_CACHE[localKey];
+    }
+  }
+
+  // Fallback to localStorage if available
+  try {
+    const local = localStorage.getItem(localKey);
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (parsed) {
+        DB_CACHE[localKey] = parsed;
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn(`Error reading ${localKey} from localStorage fallback:`, e);
+  }
+
   return DB_CACHE[localKey] !== undefined ? DB_CACHE[localKey] : defaultValue;
 }

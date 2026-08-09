@@ -42,12 +42,18 @@ export default function ApprovalInboxView({
     return dbUsers.find(u => u.user_id === id)?.name || id;
   };
 
-  // Security check: normal user only sees requests where they are the current_approver
-  // Admin is shown all pending requests for convenience, but labeled accordingly
-  const isAdmin = currentUser.user_id === 'user-admin';
+  // Security check: normal user sees requests where they are current_approver
+  // Admin & Super Admin are shown all pending requests for convenience
+  const isAdmin = currentUser.user_id === 'user-admin' || 
+                  currentUser.user_id === 'user-superadmin' || 
+                  currentUser.role === 'Administrator' || 
+                  currentUser.approval_level === 'Administrator' || 
+                  currentUser.username === 'Okay9999';
+
   const pendingRequests = requests.filter(r => {
     if (r.status !== 'pending') return false;
-    if (isAdmin) return true; // Admin gets system overlook
+    if (isAdmin) return true; // Admin gets full system inbox view
+    if (!r.current_approver) return true; // Unassigned pending requests land in approver inbox
     return r.current_approver === currentUser.user_id;
   });
   const [rejectingId, setRejectingId] = useState<string | null>(null);

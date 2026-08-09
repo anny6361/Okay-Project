@@ -46,6 +46,7 @@ import {
   getDbRequests,
   getRealReceiptImages
 } from '../data/db';
+import { saveToFirestore } from '../lib/firestore-sync';
 import { CompanyLetterhead } from './CompanyLetterhead';
 import { getLetterheadHtml } from '../utils/letterheadHtml';
 
@@ -1027,11 +1028,11 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
     );
 
     // 3. Update parent ExpenseRequest status to 'refunded'
-    const requests = JSON.parse(localStorage.getItem('okey_requests') || '[]');
+    const requests = getDbRequests();
     const matchedIdx = requests.findIndex((r: any) => r.id === ref.advance_id || (r.expense_type === 'clearing' && r.advance_id === ref.advance_id));
     if (matchedIdx !== -1) {
       requests[matchedIdx].status = 'refunded';
-      localStorage.setItem('okey_requests', JSON.stringify(requests));
+      saveToFirestore('okey_requests', requests);
     }
 
     loadFinancials();
@@ -1051,7 +1052,7 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
     const ref = dbRefunds[targetIdx];
 
     // Get parent request information
-    const requests = JSON.parse(localStorage.getItem('okey_requests') || '[]');
+    const requests = getDbRequests();
     const matchedReq = requests.find((r: any) => r.id === ref.advance_id || (r.expense_type === 'clearing' && r.advance_id === ref.advance_id));
     const requesterName = matchedReq ? matchedReq.employeeName : 'พนักงาน';
 
@@ -1084,7 +1085,7 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
       if (reqIdx !== -1) {
         requests[reqIdx].status = 'payroll_deduction';
         requests[reqIdx].settlement_type = 'payroll_deduction';
-        localStorage.setItem('okey_requests', JSON.stringify(requests));
+        saveToFirestore('okey_requests', requests);
       }
     }
 
@@ -1129,11 +1130,11 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
     );
 
     // 3. Update request status to 'deducted'
-    const requests = JSON.parse(localStorage.getItem('okey_requests') || '[]');
+    const requests = getDbRequests();
     const matchedIdx = requests.findIndex((r: any) => r.created_by === ded.user_id && r.status === 'pending_deduction');
     if (matchedIdx !== -1) {
       requests[matchedIdx].status = 'deducted';
-      localStorage.setItem('okey_requests', JSON.stringify(requests));
+      saveToFirestore('okey_requests', requests);
     }
 
     loadFinancials();

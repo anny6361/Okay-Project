@@ -21,7 +21,8 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { ExpenseRequest, UserProfile } from '../types';
-import { getDbUsers, getDbCompanyData, getRealReceiptImages, getDbRefunds } from '../data/db';
+import { getDbUsers, getDbCompanyData, getRealReceiptImages, getDbRefunds, getDbRequests } from '../data/db';
+import { saveToFirestore } from '../lib/firestore-sync';
 import { CompanyLetterhead } from './CompanyLetterhead';
 import { getLetterheadHtml } from '../utils/letterheadHtml';
 
@@ -33,8 +34,8 @@ export default function DocumentPdfManagerView() {
   const [companyData, setCompanyData] = useState<any>(null);
 
   useEffect(() => {
-    // Load requests from localStorage
-    const loadedReqs = JSON.parse(localStorage.getItem('okey_requests') || '[]');
+    // Load requests from database cache / firestore
+    const loadedReqs = getDbRequests();
     setRequests(loadedReqs);
     if (loadedReqs.length > 0) {
       setSelectedRequest(loadedReqs[0]);
@@ -88,8 +89,8 @@ export default function DocumentPdfManagerView() {
         setRequests(updatedRequests);
         setSelectedRequest(updatedRequest);
         
-        // Save back to localStorage
-        localStorage.setItem('okey_requests', JSON.stringify(updatedRequests));
+        // Save back to database
+        saveToFirestore('okey_requests', updatedRequests);
       
     });
     }
@@ -111,7 +112,7 @@ export default function DocumentPdfManagerView() {
     const updatedRequests = requests.map(r => r.id === selectedRequest.id ? updatedRequest : r);
     setRequests(updatedRequests);
     setSelectedRequest(updatedRequest);
-    localStorage.setItem('okey_requests', JSON.stringify(updatedRequests));
+    saveToFirestore('okey_requests', updatedRequests);
   };
 
   // Calculate dynamic settlement details for clearing vouchers

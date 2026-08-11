@@ -34,6 +34,7 @@ function ReceiptViewer({ receiptName, amount, title, date, id }: { receiptName: 
   const handlePrint = () => {
     const printWindow: any = {
       document: {
+        open: () => { printWindow._html = ''; },
         write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
         close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
       },
@@ -1198,7 +1199,7 @@ export default function RequestDetailModal({ request, onClose, onAddComment, cur
                             alt="Attached receipt" 
                             referrerPolicy="no-referrer"
                             onError={(e) => {
-                              e.currentTarget.src = 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&auto=format&fit=crop&q=80';
+                              e.currentTarget.style.display = 'none';
                             }}
                           />
                         )}

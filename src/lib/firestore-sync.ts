@@ -139,7 +139,7 @@ export async function saveToFirestore(localKey: string, data: any) {
     console.warn(`localStorage save error for ${localKey}:`, e);
   }
 
-  globalRenderTrigger();
+  setTimeout(() => globalRenderTrigger(), 0);
 
   try {
     if (localKey === 'okey_requests') {

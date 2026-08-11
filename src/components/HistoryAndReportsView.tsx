@@ -138,6 +138,7 @@ export default function HistoryAndReportsView({ requests, onSelectRequest, curre
     
     const printWindow: any = {
       document: {
+        open: () => { printWindow._html = ''; },
         write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
         close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
       },

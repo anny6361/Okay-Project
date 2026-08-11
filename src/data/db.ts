@@ -888,7 +888,7 @@ export function saveDbReplacementPolicy(policy: ReplacementPolicy) {
   saveToFirestore('okey_db_replacement_policy', policy);
 }
 
-// Helper to get real photo-realistic receipt images for any request (No mock text/blue-band cards)
+// Helper to get real uploaded receipt images or files for any request (No test images)
 export function getRealReceiptImages(req: ExpenseRequest): string[] {
   if (!req) return [];
   const list: string[] = [];
@@ -906,9 +906,6 @@ export function getRealReceiptImages(req: ExpenseRequest): string[] {
   if (req.receiptUrl && typeof req.receiptUrl === 'string') {
     if (req.receiptUrl.startsWith('data:') || req.receiptUrl.startsWith('http') || req.receiptUrl.startsWith('/') || req.receiptUrl.startsWith('blob:')) {
       if (!list.includes(req.receiptUrl)) list.push(req.receiptUrl);
-    } else {
-      const img = mapFilenameToRealReceipt(req.receiptUrl, req.category);
-      if (img && !list.includes(img)) list.push(img);
     }
   }
   
@@ -917,28 +914,17 @@ export function getRealReceiptImages(req: ExpenseRequest): string[] {
     req.receiptUrls.forEach(url => {
       if (url && (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/') || url.startsWith('blob:'))) {
         if (!list.includes(url)) list.push(url);
-      } else if (url) {
-        const img = mapFilenameToRealReceipt(url, req.category);
-        if (img && !list.includes(img)) list.push(img);
       }
     });
   } else if (req.receiptName && list.length === 0) {
     if (req.receiptName.startsWith('data:') || req.receiptName.startsWith('http') || req.receiptName.startsWith('/') || req.receiptName.startsWith('blob:')) {
       if (!list.includes(req.receiptName)) list.push(req.receiptName);
-    } else {
-      const img = mapFilenameToRealReceipt(req.receiptName, req.category);
-      if (img && !list.includes(img)) list.push(img);
     }
   }
 
   // 4. Check refund proof url
-  if (req.refund_proof_url && !list.includes(req.refund_proof_url)) {
+  if (req.refund_proof_url && (req.refund_proof_url.startsWith('data:') || req.refund_proof_url.startsWith('http') || req.refund_proof_url.startsWith('/') || req.refund_proof_url.startsWith('blob:')) && !list.includes(req.refund_proof_url)) {
     list.push(req.refund_proof_url);
-  }
-  
-  // fallback if there's absolutely nothing
-  if (list.length === 0) {
-    list.push(mapFilenameToRealReceipt('default', req.category));
   }
   
   return list;
@@ -1015,29 +1001,11 @@ export function getSafePreviewUrl(url: string): string {
   return url;
 }
 
-export function mapFilenameToRealReceipt(filename: string, category: string): string {
-  const nameLower = (filename || '').toLowerCase();
-  const catLower = (category || '').toLowerCase();
-  
-  if (nameLower.includes('shakariki') || catLower.includes('meals') || catLower.includes('food') || catLower.includes('dining')) {
-    // Real restaurant receipt
-    return 'https://images.unsplash.com/photo-1554415707-6e8cfc93fe23?w=800&auto=format&fit=crop&q=80';
-  } else if (nameLower.includes('aws') || catLower.includes('software') || catLower.includes('it') || catLower.includes('service')) {
-    // Real software billing/invoice dashboard
-    return 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&auto=format&fit=crop&q=80';
-  } else if (nameLower.includes('jib') || catLower.includes('equipment') || catLower.includes('hardware') || catLower.includes('computer')) {
-    // Real electronics retail receipt
-    return 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&auto=format&fit=crop&q=80';
-  } else if (nameLower.includes('airasia') || catLower.includes('travel') || catLower.includes('transport') || catLower.includes('flight')) {
-    // Real airline flight boarding pass or receipt ticket
-    return 'https://images.unsplash.com/photo-1540339832862-474529800a58?w=800&auto=format&fit=crop&q=80';
-  } else if (catLower.includes('marketing') || nameLower.includes('facebook') || catLower.includes('ads')) {
-    // Real advertising billing statement
-    return 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=80';
-  } else {
-    // Generic high-quality retail transaction receipt
-    return 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&auto=format&fit=crop&q=80';
+export function mapFilenameToRealReceipt(filename: string, category?: string): string {
+  if (filename && (filename.startsWith('data:') || filename.startsWith('http') || filename.startsWith('/') || filename.startsWith('blob:'))) {
+    return filename;
   }
+  return '';
 }
 
 // Generates a type-specific sequential document running number per month

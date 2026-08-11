@@ -18,7 +18,8 @@ import {
   Briefcase,
   CheckCircle,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 import { ExpenseRequest, UserProfile } from '../types';
 import { getDbUsers, getDbCompanyData, getRealReceiptImages, getDbRefunds, getDbRequests } from '../data/db';
@@ -32,6 +33,7 @@ export default function DocumentPdfManagerView() {
   const [selectedRequest, setSelectedRequest] = useState<ExpenseRequest | null>(null);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [companyData, setCompanyData] = useState<any>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     // Load requests from database cache / firestore
@@ -68,9 +70,11 @@ export default function DocumentPdfManagerView() {
   // Handler to let users upload additional receipts/supporting evidence directly in this view
   const handleReceiptUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    const inputElement = e.target;
     if (file && selectedRequest) {
+      setIsUploading(true);
       uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then(async (dataUrl) => {
-      
+        
         
         
         // Add new attachment to the request's attachment_list
@@ -91,8 +95,13 @@ export default function DocumentPdfManagerView() {
         
         // Save back to database
         saveToFirestore('okey_requests', updatedRequests);
-      
-    });
+        setIsUploading(false);
+        inputElement.value = '';
+      }).catch(err => {
+        console.error("Upload failed", err);
+        setIsUploading(false);
+        inputElement.value = '';
+      });
     }
   };
 
@@ -147,6 +156,7 @@ export default function DocumentPdfManagerView() {
     
     const printWindow: any = {
       document: {
+        open: () => { printWindow._html = ''; },
         write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
         close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
       },
@@ -1410,15 +1420,25 @@ export default function DocumentPdfManagerView() {
                       ))}
 
                       {/* Add more attachments tile */}
-                      <div className="aspect-square rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer relative transition-colors duration-200">
+                      <div className={`aspect-square rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center bg-slate-50/50 dark:bg-slate-950/30 hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer relative transition-colors duration-200 ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
                         <input
                           type="file"
                           accept="image/*"
                           onChange={handleReceiptUpload}
                           className="absolute inset-0 opacity-0 cursor-pointer"
+                          disabled={isUploading}
                         />
-                        <span className="text-xl text-slate-400 font-semibold">+</span>
-                        <span className="text-[8px] text-slate-500 dark:text-slate-400 font-bold mt-1 text-center">แนบไฟล์เพิ่ม</span>
+                        {isUploading ? (
+                          <div className="flex flex-col items-center justify-center">
+                            <Loader2 className="h-6 w-6 text-primary-500 animate-spin mb-1" />
+                            <span className="text-[8px] text-slate-500 font-bold">กำลังอัปโหลด...</span>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-xl text-slate-400 font-semibold">+</span>
+                            <span className="text-[8px] text-slate-500 dark:text-slate-400 font-bold mt-1 text-center">แนบไฟล์เพิ่ม</span>
+                          </>
+                        )}
                       </div>
                     </div>
 

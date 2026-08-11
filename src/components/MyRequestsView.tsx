@@ -482,6 +482,9 @@ export default function MyRequestsView({
             firstAddedFileObj = fileObj;
           }
           resolve();
+        }).catch(err => {
+          console.error("Upload failed in processFileForOCR", err);
+          resolve(); // Resolve to prevent hanging
         });
       });
     }
@@ -1527,6 +1530,7 @@ export default function MyRequestsView({
                           const files = e.dataTransfer.files;
                           if (files && files.length > 0) {
                             processFileForOCR(files);
+                              e.target.value = '';
                           }
                         }}
                         className={`relative flex flex-col justify-center items-center border-2 border-dashed rounded-2xl p-4 text-center transition-all min-h-[140px] cursor-pointer ${
@@ -1552,6 +1556,7 @@ export default function MyRequestsView({
                             const files = e.target.files;
                             if (files && files.length > 0) {
                               processFileForOCR(files);
+                              e.target.value = '';
                             }
                           }}
                         />
@@ -1770,6 +1775,7 @@ export default function MyRequestsView({
                             const files = e.target.files;
                             if (files && files.length > 0) {
                               processFileForOCR(files);
+                              e.target.value = '';
                             }
                           }}
                         />
@@ -2656,6 +2662,7 @@ export default function MyRequestsView({
                                         onClick={() => {
                                           const printWindow: any = {
       document: {
+        open: () => { printWindow._html = ''; },
         write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
         close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
       },
@@ -2844,9 +2851,11 @@ export default function MyRequestsView({
                       const file = e.target.files?.[0];
                       if (file) {
                         setRefundFileName(file.name);
+                        const input = e.target;
                         uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then(async (dataUrl) => {
       
                           setRefundFileUrl(dataUrl);
+                                input.value = '';
                         
     });
                       }

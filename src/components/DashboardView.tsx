@@ -726,11 +726,6 @@ export default function DashboardView({
 
       const element = document.getElementById('report-printable-content');
       if (!element) throw new Error('ไม่พบข้อมูลสำหรับสร้าง PDF');
-      
-      // @ts-ignore
-      if (typeof window.html2pdf === 'undefined') {
-        throw new Error('ไม่สามารถโหลดไลบรารีสร้าง PDF ได้ กรุณาลองรีเฟรชหน้าเว็บ');
-      }
 
       // Pre-load all images to prevent incomplete rendering
       const images = Array.from(element.querySelectorAll('img'));
@@ -934,7 +929,7 @@ export default function DashboardView({
       const opt = {
         margin:       0.5,
         filename:     `okey_report_${drillDownType}_${new Date().toISOString().split('T')[0]}.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
+        image:        { type: 'jpeg' as const, quality: 0.98 },
         html2canvas:  { 
           scale: 2, 
           useCORS: true, 
@@ -1160,12 +1155,14 @@ export default function DashboardView({
             }
           }
         },
-        jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' }
+        jsPDF:        { unit: 'in' as const, format: 'a4' as const, orientation: 'landscape' as const }
       };
 
       try {
         // @ts-ignore
-        await window.html2pdf().set(opt).from(element).save();
+        const html2pdfModule = await import('html2pdf.js');
+        const html2pdfFunc = (html2pdfModule.default || html2pdfModule) as any;
+        await html2pdfFunc().set(opt).from(element).save();
       } finally {
         if (restoreStyles) {
           restoreStyles();
@@ -1204,6 +1201,7 @@ export default function DashboardView({
 
       const printWindow: any = {
       document: {
+        open: () => { printWindow._html = ''; },
         write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
         close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
       },
@@ -3213,11 +3211,13 @@ export default function DashboardView({
                           accept="image/*,application/pdf"
                           onChange={e => {
                             const file = e.target.files?.[0];
+                            const input = e.target;
                             if (file) {
                               uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
       
                                 setSettlementProofUrl(dataUrl);
                                 setSettlementProofName(file.name);
+                                input.value = '';
                               
     });
                             }
@@ -3267,11 +3267,13 @@ export default function DashboardView({
                       accept="image/*,application/pdf"
                       onChange={e => {
                         const file = e.target.files?.[0];
+                            const input = e.target;
                         if (file) {
                           uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
       
                             setSettlementProofUrl(dataUrl);
                             setSettlementProofName(file.name);
+                                input.value = '';
                           
     });
                         }
@@ -3347,11 +3349,13 @@ export default function DashboardView({
                       accept="image/*,application/pdf"
                       onChange={e => {
                         const file = e.target.files?.[0];
+                            const input = e.target;
                         if (file) {
                           uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
       
                             setSettlementProofUrl(dataUrl);
                             setSettlementProofName(file.name);
+                                input.value = '';
                           
     });
                         }

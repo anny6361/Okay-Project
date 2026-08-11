@@ -1468,6 +1468,9 @@ export default function App() {
         />
       )}
 
+      {/* Global PDF Preview & Action Modal */}
+      <PdfPreviewModal />
+
     </div>
   );
 }

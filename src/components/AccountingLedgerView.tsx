@@ -208,6 +208,7 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
     if (!doc) return;
     const printWindow: any = {
       document: {
+        open: () => { printWindow._html = ''; },
         write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
         close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
       },
@@ -1446,11 +1447,69 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
                 <span className="print:text-black print:text-lg">รายการเอกสารสำคัญทางการเงินระบบเบิกจ่าย (Accounting Vouchers Sheet)</span>
               </h2>
               <button
-                onClick={() => window.print()}
-                className="px-4 py-2 bg-green-700 hover:bg-green-600 active:bg-green-800 text-white rounded-xl shadow-md shadow-green-700/10 transition-all hover:scale-[1.02] active:scale-[0.98] text-xs font-bold flex items-center gap-1.5 print:hidden"
+                onClick={() => {
+                  const companyName = companyData?.companyName || 'บริษัท โอเค เอ็กซ์เพนส์ แมเนจเมนท์ จำกัด';
+                  const companyAddress = companyData?.address || '99/9 ถนนพระราม 9 แขวงห้วยขวาง เขตห้วยขวาง กรุงเทพมหานคร 10310';
+                  const companyTaxId = companyData?.taxId || '0-1055-66000-11-2';
+
+                  const rowsHtml = accountingDocs.map(doc => `
+                    <tr>
+                      <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; font-family: monospace; font-weight: bold;">${doc.doc_id}</td>
+                      <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${doc.doc_type}</td>
+                      <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${doc.employee_name || '-'}</td>
+                      <td style="padding: 8px; border-bottom: 1px solid #e2e8f0;">${doc.description || '-'}</td>
+                      <td style="padding: 8px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">฿${doc.amount.toLocaleString()}</td>
+                    </tr>
+                  `).join('');
+
+                  const tableHtml = `
+                    <!DOCTYPE html>
+                    <html>
+                      <head>
+                        <title>รายการเอกสารสำคัญทางการเงิน</title>
+                        <style>
+                          body { font-family: 'Sarabun', sans-serif; padding: 20px; color: #0f172a; }
+                          .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 20px; }
+                          table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
+                          th { background: #f8fafc; padding: 10px 8px; text-align: left; border-bottom: 2px solid #cbd5e1; font-weight: bold; }
+                        </style>
+                      </head>
+                      <body>
+                        <div class="header">
+                          <div>
+                            <h2 style="margin: 0; color: #1e3a8a; font-size: 18px;">${companyName}</h2>
+                            <p style="margin: 2px 0; font-size: 10px; color: #64748b;">${companyAddress} | เลขผู้เสียภาษี: ${companyTaxId}</p>
+                          </div>
+                          <div style="text-align: right;">
+                            <h3 style="margin: 0; font-size: 14px;">Accounting Vouchers Sheet</h3>
+                            <p style="margin: 2px 0; font-size: 10px; color: #64748b;">วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH')}</p>
+                          </div>
+                        </div>
+                        <h3 style="font-size: 14px; margin-bottom: 10px;">รายการเอกสารสำคัญทางการเงินระบบเบิกจ่าย</h3>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>เลขที่เอกสาร</th>
+                              <th>ประเภท</th>
+                              <th>ผู้ขอเบิก/ผู้คืน</th>
+                              <th>รายละเอียด</th>
+                              <th style="text-align: right;">จำนวนเงิน</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${rowsHtml}
+                          </tbody>
+                        </table>
+                      </body>
+                    </html>
+                  `;
+
+                  openPdfPreview(tableHtml, 'ตารางรายการเอกสารสำคัญทางการเงิน');
+                }}
+                className="px-4 py-2 bg-green-700 hover:bg-green-600 active:bg-green-800 text-white rounded-xl shadow-md shadow-green-700/10 transition-all hover:scale-[1.02] active:scale-[0.98] text-xs font-bold flex items-center gap-1.5 print:hidden cursor-pointer"
               >
                 <Printer className="h-4 w-4" />
-                <span>พิมพ์ตารางนี้ (Print Sheet)</span>
+                <span>พิมพ์ / บันทึกตารางนี้ (Print/PDF)</span>
               </button>
             </div>
 
@@ -1975,6 +2034,7 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
                               onClick={() => {
                                 const printWindow: any = {
       document: {
+        open: () => { printWindow._html = ''; },
         write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
         close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
       },

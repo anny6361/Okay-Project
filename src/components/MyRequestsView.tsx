@@ -333,21 +333,21 @@ export default function MyRequestsView({
   }, [category, categoriesList]);
 
   // Scan single attached file with AI OCR
-  const scanSingleFileWithAI = async (fileObj: { name: string; type: string; size: number; dataUrl: string }) => {
+  const scanSingleFileWithAI = async (fileObj: { name: string; type: string; size: number; dataUrl: string; rawBase64?: string }) => {
     setIsScanning(true);
     setOcrError(null);
 
     try {
-      let base64Data = fileObj.dataUrl;
+      let base64Data = fileObj.rawBase64 || fileObj.dataUrl;
       
-      // If dataUrl is a remote HTTP/HTTPS URL, fetch blob and convert to data URL
-      if (base64Data.startsWith('http://') || base64Data.startsWith('https://')) {
+      // If dataUrl is a remote HTTP/HTTPS/BLOB URL, fetch blob and convert to data URL
+      if (base64Data.startsWith('http://') || base64Data.startsWith('https://') || base64Data.startsWith('blob:')) {
         try {
           const fetched = await fetch(base64Data);
           const blob = await fetched.blob();
           base64Data = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string || '');
+            reader.onloadend = () => resolve((reader.result as string) || '');
             reader.onerror = reject;
             reader.readAsDataURL(blob);
           });
@@ -356,9 +356,26 @@ export default function MyRequestsView({
         }
       }
 
-      const commaIdx = base64Data.indexOf(',');
-      if (commaIdx !== -1) {
-        base64Data = base64Data.substring(commaIdx + 1);
+      let detectedMime = fileObj.type || 'image/jpeg';
+      if (base64Data.includes(',')) {
+        const parts = base64Data.split(',');
+        if (parts[0].includes(';base64') && parts[0].includes('data:')) {
+          const matchedMime = parts[0].match(/data:(.*?);/);
+          if (matchedMime && matchedMime[1]) {
+            detectedMime = matchedMime[1];
+          }
+        }
+        base64Data = parts[1];
+      }
+
+      // Normalize MIME type
+      let cleanMime = detectedMime.toLowerCase().trim();
+      if (cleanMime === 'image/jpg' || cleanMime === 'pjpeg') cleanMime = 'image/jpeg';
+      if (!cleanMime || cleanMime === 'application/octet-stream') {
+        if (base64Data.startsWith('/9j/')) cleanMime = 'image/jpeg';
+        else if (base64Data.startsWith('iVBORw')) cleanMime = 'image/png';
+        else if (base64Data.startsWith('JVBER')) cleanMime = 'application/pdf';
+        else cleanMime = 'image/jpeg';
       }
 
       const response = await fetch('/api/ocr', {
@@ -366,7 +383,7 @@ export default function MyRequestsView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fileData: base64Data,
-          mimeType: fileObj.type || 'image/jpeg'
+          mimeType: cleanMime
         })
       });
 
@@ -390,8 +407,12 @@ export default function MyRequestsView({
           }
         }
 
-        setTitle(ocr.merchant ? `เบิกจ่าย: ${ocr.merchant}` : '');
-        setAmount(ocr.amount || 0);
+        if (ocr.merchant) {
+          setTitle(`เบิกจ่าย: ${ocr.merchant}`);
+        }
+        if (typeof ocr.amount === 'number' && ocr.amount > 0) {
+          setAmount(ocr.amount);
+        }
         if (ocr.date) {
           setDate(ocr.date);
         }
@@ -409,9 +430,12 @@ export default function MyRequestsView({
           setTaxId('');
         }
 
-        let desc = `นำเข้าข้อมูลอัตโนมัติผ่าน AI OCR\nร้านค้า: ${ocr.merchant}\n`;
+        let desc = `นำเข้าข้อมูลอัตโนมัติผ่าน AI OCR\nร้านค้า: ${ocr.merchant || 'ไม่ระบุ'}\n`;
         if (ocr.invoiceId) {
           desc += `เลขใบเสร็จ: ${ocr.invoiceId}\n`;
+        }
+        if (ocr.taxId) {
+          desc += `เลขประจำตัวผู้เสียภาษี: ${ocr.taxId}\n`;
         }
         if (ocr.vat) {
           desc += `ภาษีมูลค่าเพิ่ม (VAT): ฿${(ocr.vat || 0).toLocaleString()}\n`;
@@ -426,14 +450,14 @@ export default function MyRequestsView({
         setDescription(desc);
 
         // Suggest category
-        const mLower = ocr.merchant ? ocr.merchant.toLowerCase() : '';
-        if (mLower.includes('grab') || mLower.includes('taxi') || mLower.includes('bts') || mLower.includes('mrt') || mLower.includes('ค่าเดินทาง')) {
-          setCategory('travel');
-        } else if (mLower.includes('starbucks') || mLower.includes('อาหาร') || mLower.includes('mk') || mLower.includes('สตาบัคส์') || mLower.includes('food')) {
+        const mLower = (ocr.merchant || '').toLowerCase();
+        if (mLower.includes('grab') || mLower.includes('taxi') || mLower.includes('bts') || mLower.includes('mrt') || mLower.includes('ค่าเดินทาง') || mLower.includes('ปตท') || mLower.includes('ptt') || mLower.includes('shell') || mLower.includes('bangchak')) {
+          setCategory(mLower.includes('ปตท') || mLower.includes('ptt') || mLower.includes('shell') || mLower.includes('bangchak') ? 'fuel' : 'travel');
+        } else if (mLower.includes('starbucks') || mLower.includes('อาหาร') || mLower.includes('mk') || mLower.includes('สตาบัคส์') || mLower.includes('food') || mLower.includes('7-eleven') || mLower.includes('เซเว่น')) {
           setCategory('meals');
-        } else if (mLower.includes('aws') || mLower.includes('cloud') || mLower.includes('adobe') || mLower.includes('software')) {
+        } else if (mLower.includes('aws') || mLower.includes('cloud') || mLower.includes('adobe') || mLower.includes('software') || mLower.includes('google') || mLower.includes('microsoft')) {
           setCategory('software');
-        } else if (mLower.includes('it') || mLower.includes('jib') || mLower.includes('office') || mLower.includes('อุปกรณ์')) {
+        } else if (mLower.includes('it') || mLower.includes('jib') || mLower.includes('office') || mLower.includes('อุปกรณ์') || mLower.includes('banana')) {
           setCategory('equipment');
         }
       } else {
@@ -458,35 +482,44 @@ export default function MyRequestsView({
 
     const newUploadedFiles = [...uploadedFiles];
     const newReceiptUrls = [...receiptAttachedList];
-    let firstAddedFileObj: { name: string; type: string; size: number; dataUrl: string } | null = null;
+    let firstAddedFileObj: { name: string; type: string; size: number; dataUrl: string; rawBase64?: string } | null = null;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
 
-      await new Promise<void>((resolve) => {
-        uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
-          const fileObj = {
-            name: file.name,
-            type: file.type || 'application/octet-stream',
-            size: file.size,
-            dataUrl: dataUrl
-          };
-
-          newUploadedFiles.push(fileObj);
-          newReceiptUrls.push(dataUrl);
-
-          // Check if this file can be scanned by OCR (image or PDF)
-          const fileTypeLower = (file.type || '').toLowerCase();
-          const fileNameLower = (file.name || '').toLowerCase();
-          if (!firstAddedFileObj && (fileTypeLower.startsWith('image/') || fileTypeLower === 'application/pdf' || fileNameLower.endsWith('.pdf'))) {
-            firstAddedFileObj = fileObj;
-          }
-          resolve();
-        }).catch(err => {
-          console.error("Upload failed in processFileForOCR", err);
-          resolve(); // Resolve to prevent hanging
-        });
+      // Read local base64 data URL directly from File object
+      const localDataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve((e.target?.result as string) || '');
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
       });
+
+      // Upload to storage for persistent URL
+      let persistentUrl = localDataUrl;
+      try {
+        persistentUrl = await uploadToStorage('uploads/' + Date.now() + '_' + file.name, file);
+      } catch (e) {
+        console.warn('Storage upload error, using local dataUrl:', e);
+      }
+
+      const fileObj = {
+        name: file.name,
+        type: file.type || 'image/jpeg',
+        size: file.size,
+        dataUrl: persistentUrl,
+        rawBase64: localDataUrl
+      };
+
+      newUploadedFiles.push(fileObj);
+      newReceiptUrls.push(persistentUrl);
+
+      // Check if this file can be scanned by OCR (image or PDF)
+      const fileTypeLower = (file.type || '').toLowerCase();
+      const fileNameLower = (file.name || '').toLowerCase();
+      if (!firstAddedFileObj && (fileTypeLower.startsWith('image/') || fileTypeLower === 'application/pdf' || fileNameLower.endsWith('.pdf'))) {
+        firstAddedFileObj = fileObj;
+      }
     }
 
     setUploadedFiles(newUploadedFiles);

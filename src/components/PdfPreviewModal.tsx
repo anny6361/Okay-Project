@@ -7,7 +7,7 @@ function getSanitizedPrintHtml(rawHtml: string) {
   // Strip out any automatic window.close() calls and onload attributes that interfere with printing
   let clean = rawHtml
     .replace(/window\.close\(\);?/gi, '')
-    .replace(/onload="[^"]*"/gi, '');
+    .replace(/onload=\s*(['"])(.*?)\1|onload=\s*([^\s>]+)/gi, '');
 
   // Add optimal print styles for A4 paper and exact color rendering
   const printStyles = `

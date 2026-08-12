@@ -5,28 +5,45 @@ import { downloadHtmlAsPdf, printHtmlDirectly, cleanCssText } from '../utils/pdf
 import { getSafePreviewUrl } from '../data/db';
 
 function getSanitizedPrintHtml(rawHtml: string) {
-  // Strip out any automatic window.close() calls and onload attributes that interfere with printing
   let clean = rawHtml
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/window\.close\(\);?/gi, '')
     .replace(/onload=\s*(['"])(.*?)\1|onload=\s*([^\s>]+)/gi, '');
 
   clean = cleanCssText(clean);
 
-  // Add optimal print styles for A4 paper and exact color rendering
   const printStyles = `
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <style>
+      * {
+        box-sizing: border-box;
+        color-scheme: light !important;
+      }
+      html, body {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        margin: 0;
+        padding: 16px;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      table {
+        border-collapse: collapse !important;
+        width: 100% !important;
+      }
+      th, td {
+        border-color: #cbd5e1 !important;
+      }
       @media print {
         @page {
           size: A4 portrait;
           margin: 10mm;
         }
         body {
-          margin: 0 !important;
           padding: 0 !important;
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-          color-adjust: exact !important;
-          background: #ffffff !important;
         }
         .no-print, button, .hidden-print {
           display: none !important;
@@ -37,8 +54,10 @@ function getSanitizedPrintHtml(rawHtml: string) {
 
   if (clean.includes('</head>')) {
     clean = clean.replace('</head>', `${printStyles}</head>`);
+  } else if (clean.includes('<html>')) {
+    clean = clean.replace('<html>', `<html><head>${printStyles}</head>`);
   } else {
-    clean = `${printStyles}${clean}`;
+    clean = `<!DOCTYPE html><html><head><meta charset="utf-8">${printStyles}</head><body>${clean}</body></html>`;
   }
 
   return clean;
@@ -54,7 +73,7 @@ function extractPreviewTarget(htmlContent: string) {
 
   clean = cleanCssText(clean);
 
-  // Check 1: Does the HTML contain an iframe with src (e.g. PDF wrapper or document wrapper)?
+  // Check 1: Does the HTML contain an iframe with src (e.g. PDF wrapper)?
   const iframeSrcMatch = htmlContent.match(/<iframe\s+[^>]*src=["']([^"']+)["']/i);
   if (iframeSrcMatch && iframeSrcMatch[1]) {
     const rawUrl = iframeSrcMatch[1];
@@ -153,11 +172,19 @@ export default function PdfPreviewModal() {
 
     if (parsed.isPdfUrl && parsed.targetUrl) {
       const safeUrl = getSafePreviewUrl(parsed.targetUrl);
-      printHtmlDirectly(`
-        <div style="width:100%;height:100vh;">
-          <iframe src="${safeUrl}" style="width:100%;height:100vh;border:none;"></iframe>
-        </div>
-      `);
+      if (iframeRef.current?.contentWindow) {
+        try {
+          iframeRef.current.contentWindow.focus();
+          iframeRef.current.contentWindow.print();
+          return;
+        } catch (e) {
+          console.warn('Iframe print failed, opening in new window:', e);
+        }
+      }
+      const win = window.open(safeUrl, '_blank');
+      if (win) {
+        win.focus();
+      }
     } else if (parsed.isImgUrl && parsed.targetUrl) {
       printHtmlDirectly(`
         <div style="text-align:center;padding:20px;">
@@ -165,7 +192,8 @@ export default function PdfPreviewModal() {
         </div>
       `);
     } else {
-      printHtmlDirectly(parsed.cleanHtml || content.html);
+      const sanitized = getSanitizedPrintHtml(parsed.cleanHtml || content.html);
+      printHtmlDirectly(sanitized);
     }
   };
 
@@ -180,12 +208,26 @@ export default function PdfPreviewModal() {
       // Case 1: Embedded PDF file (dataUrl / blob / http)
       if (parsed.isPdfUrl && parsed.targetUrl) {
         const safeUrl = getSafePreviewUrl(parsed.targetUrl);
-        const a = document.createElement('a');
-        a.href = safeUrl;
-        a.download = title.toLowerCase().endsWith('.pdf') ? title : `${title}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        try {
+          const res = await fetch(safeUrl);
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = title.toLowerCase().endsWith('.pdf') ? title : `${title}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        } catch (fetchErr) {
+          const a = document.createElement('a');
+          a.href = safeUrl;
+          a.download = title.toLowerCase().endsWith('.pdf') ? title : `${title}.pdf`;
+          a.target = '_blank';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
 
         setDownloadSuccess(true);
         setTimeout(() => setDownloadSuccess(false), 3000);
@@ -345,4 +387,3 @@ export default function PdfPreviewModal() {
     </div>
   );
 }
-

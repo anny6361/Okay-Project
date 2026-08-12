@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { openPdfPreview } from '../lib/pdf-preview';
 import { Search, Filter, Calendar, FileText, Image as ImageIcon, ZoomIn, Download, File, X, ChevronLeft, ChevronRight, RotateCw, ZoomOut, Printer, Grid, List } from 'lucide-react';
 import { getDbRequests, getRealReceiptImages, addEnterpriseAuditLog, getSafePreviewUrl } from '../data/db';
+import { printHtmlDirectly } from '../utils/pdfGenerator';
 import { ExpenseRequest } from '../types';
 
 export default function DocumentGalleryView({ currentUser }: { currentUser: any }) {

@@ -31,6 +31,7 @@ import { ExpenseRequest, ExpenseCategory, UserProfile } from '../types';
 import { CATEGORIES_CONFIG } from '../data/masterData';
 import { getDbDepartments, getDbCategories, saveDbCategories, getDbReplacementPolicy, getClearingStatusInfo, getRealWorkflowStepInfo, getSafePreviewUrl, getDbRequests, getDbCompanyData } from '../data/db';
 import { getLetterheadHtml } from '../utils/letterheadHtml';
+import { printHtmlDirectly } from '../utils/pdfGenerator';
 
 
 interface MyRequestsViewProps {

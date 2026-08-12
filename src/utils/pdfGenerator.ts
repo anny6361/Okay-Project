@@ -197,37 +197,27 @@ export async function downloadHtmlAsPdf(htmlContent: string, fileName: string = 
   // @ts-ignore
   const html2pdfModule = await import('html2pdf.js');
 
-  // Create an on-viewport container placed behind other elements (not at -9999px) so html2canvas renders correctly
   const container = document.createElement('div');
-  container.style.position = 'fixed';
-  container.style.left = '0px';
+  container.className = 'pdf-render-container';
+  container.style.position = 'absolute';
+  container.style.left = '-9999px';
   container.style.top = '0px';
-  container.style.zIndex = '-99999';
-  container.style.width = '800px'; // Standard A4 width
+  container.style.width = '800px';
   container.style.backgroundColor = '#ffffff';
   container.style.color = '#000000';
   container.style.fontFamily = 'Sarabun, Arial, sans-serif';
-  container.style.pointerEvents = 'none';
-  container.style.opacity = '1';
-  container.style.overflow = 'visible';
-  container.className = 'pdf-render-container';
-  
-  // Clean up scripts, auto-close snippets, and convert oklch/color-mix
+
   let cleanHtml = htmlContent
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/window\.close\(\);?/gi, '')
     .replace(/onload="[^"]*"/gi, '');
 
-  // Strip iframe tags if any remain
-  cleanHtml = cleanHtml.replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '<div style="padding:20px;text-align:center;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;">[เอกสารแนบ PDF]</div>');
-
   cleanHtml = cleanCssText(cleanHtml);
 
-  // Wrap inside print container with forced light mode colors so dark mode doesn't turn text white or background black
   const styledHtml = `
-    <div style="background-color: #ffffff !important; color: #000000 !important; padding: 16px; font-family: Sarabun, Arial, sans-serif; min-height: 100%;">
+    <div style="background-color: #ffffff !important; color: #000000 !important; padding: 24px; font-family: Sarabun, Arial, sans-serif; min-height: 100%; box-sizing: border-box;">
       <style>
-        * { color-scheme: light !important; }
+        * { color-scheme: light !important; box-sizing: border-box !important; }
         body, table, td, th, p, span, div, h1, h2, h3, h4, h5, h6 {
           color: #000000 !important;
         }
@@ -259,7 +249,7 @@ export async function downloadHtmlAsPdf(htmlContent: string, fileName: string = 
   const cleanFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
 
   const opt = {
-    margin: [8, 8, 8, 8] as [number, number, number, number], // 8mm margins
+    margin: [8, 8, 8, 8] as [number, number, number, number],
     filename: cleanFileName,
     image: { type: 'jpeg' as const, quality: 0.98 },
     html2canvas: {
@@ -274,9 +264,21 @@ export async function downloadHtmlAsPdf(htmlContent: string, fileName: string = 
         const clonedContainer = clonedDoc.querySelector('.pdf-render-container') as HTMLElement;
         if (clonedContainer) {
           clonedContainer.style.position = 'static';
-          clonedContainer.style.zIndex = 'auto';
+          clonedContainer.style.left = '0';
+          clonedContainer.style.top = '0';
+          clonedContainer.style.visibility = 'visible';
+          clonedContainer.style.display = 'block';
+          clonedContainer.style.width = '800px';
+          clonedContainer.style.margin = '0 auto';
         }
-        // Sanitize any style elements or elements with inline style in cloned document
+        
+        Array.from(clonedDoc.body.children).forEach((child) => {
+          if (child !== clonedContainer && !child.classList?.contains('pdf-render-container')) {
+            (child as HTMLElement).style.display = 'none';
+          }
+        });
+        clonedDoc.body.style.backgroundColor = '#ffffff';
+
         const styles = Array.from(clonedDoc.querySelectorAll('style'));
         styles.forEach((s) => {
           if (s.textContent) {
@@ -298,10 +300,8 @@ export async function downloadHtmlAsPdf(htmlContent: string, fileName: string = 
   let restoreStyles: (() => void) | null = null;
 
   try {
-    // Temporarily sanitize main document styles so html2canvas doesn't fail on global Tailwind oklch
     restoreStyles = sanitizeDocumentStylesForHtml2Canvas();
 
-    // Wait for all images inside container to finish loading
     const images = Array.from(container.querySelectorAll('img'));
     await Promise.all(
       images.map(img => {
@@ -336,7 +336,6 @@ export async function downloadHtmlAsPdf(htmlContent: string, fileName: string = 
 }
 
 export function printHtmlDirectly(htmlContent: string) {
-  // Clean scripts and window.close and oklch
   let cleanHtml = htmlContent
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
     .replace(/window\.close\(\);?/gi, '')
@@ -344,7 +343,6 @@ export function printHtmlDirectly(htmlContent: string) {
 
   cleanHtml = cleanCssText(cleanHtml);
 
-  // Remove existing overlay/styles if present
   const oldOverlay = document.getElementById('active-print-overlay');
   if (oldOverlay && oldOverlay.parentNode) {
     oldOverlay.parentNode.removeChild(oldOverlay);
@@ -359,7 +357,7 @@ export function printHtmlDirectly(htmlContent: string) {
   printOverlay.innerHTML = `
     <div style="background-color:#ffffff; color:#000000; padding:20px; font-family:Sarabun, Arial, sans-serif;">
       <style>
-        * { color-scheme: light !important; }
+        * { color-scheme: light !important; box-sizing: border-box !important; }
         .no-print, button, .hidden-print { display: none !important; }
         body, table, td, th, p, span, div, h1, h2, h3, h4, h5, h6 { color: #000000 !important; }
         table { border-collapse: collapse !important; width: 100% !important; }
@@ -372,6 +370,11 @@ export function printHtmlDirectly(htmlContent: string) {
   const styleEl = document.createElement('style');
   styleEl.id = 'active-print-style';
   styleEl.innerHTML = `
+    @media screen {
+      #active-print-overlay {
+        display: none !important;
+      }
+    }
     @media print {
       body > *:not(#active-print-overlay) {
         display: none !important;
@@ -417,4 +420,3 @@ export function printHtmlDirectly(htmlContent: string) {
 
   return true;
 }
-

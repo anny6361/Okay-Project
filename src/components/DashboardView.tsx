@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { ExpenseRequest, DepartmentBudget, UserProfile, ApprovalStep } from '../types';
 import { CATEGORIES_CONFIG } from '../data/masterData';
-import { getDbUsers, getClearingStatusInfo, addEnterpriseAuditLog, getDbDepartments, getDbJournalEntries, getDbEnterpriseAuditLogs, getDbRequests } from '../data/db';
+import { getDbUsers, getClearingStatusInfo, addEnterpriseAuditLog, getDbDepartments, getDbJournalEntries, getDbEnterpriseAuditLogs, getDbRequests, getSafePreviewUrl } from '../data/db';
 
 
 interface DashboardViewProps {
@@ -3448,7 +3448,7 @@ export default function DashboardView({
             </button>
             {settlementPreviewUrl.startsWith('data:application/pdf') || settlementPreviewUrl.endsWith('.pdf') || settlementPreviewUrl.includes('application/pdf') ? (
               <iframe
-                src={settlementPreviewUrl}
+                src={getSafePreviewUrl(settlementPreviewUrl)}
                 className="w-[85vw] max-w-5xl h-[85vh] rounded-2xl border border-white/10 shadow-2xl bg-white dark:bg-slate-900"
                 title="PDF Viewer"
                 onClick={(e) => e.stopPropagation()}

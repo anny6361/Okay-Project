@@ -12,6 +12,9 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
 
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerItem, setViewerItem] = useState<{url: string, name: string, ext: string} | null>(null);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [viewerZoomScale, setViewerZoomScale] = useState(1);
+  const [viewerRotation, setViewerRotation] = useState(0);
 
   const allRequests = useMemo(() => getDbRequests(), []);
 
@@ -181,7 +184,7 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
       {/* Grid View */}
       {viewMode === 'gallery' && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-          {filteredDocs.map(doc => (
+          {filteredDocs.map((doc, docIdx) => (
             <div key={doc.id} className="group relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all">
               <div className="aspect-square bg-slate-100 dark:bg-slate-800 relative flex items-center justify-center overflow-hidden">
                 {doc.ext === 'pdf' ? (
@@ -211,15 +214,18 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
                 {/* Overlay actions */}
                 <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                   <button onClick={() => { 
+                    setViewerIndex(docIdx);
                     setViewerItem(doc); 
                     setViewerOpen(true); 
+                    setViewerZoomScale(1);
+                    setViewerRotation(0);
                     addEnterpriseAuditLog(currentUser.user_id, currentUser.name, currentUser.approval_level || 'Staff', 'Preview', `Previewed document ${doc.name} for ${doc.reqId}`);
-                  }} className="p-2 bg-white/20 hover:bg-white/40 rounded-full text-white backdrop-blur-sm">
+                  }} className="p-2 bg-white/20 hover:bg-white/40 rounded-full text-white backdrop-blur-sm cursor-pointer" title="ดูตัวอย่าง">
                     <ZoomIn className="h-5 w-5" />
                   </button>
                   <a href={doc.url} download={doc.name} onClick={() => {
                     addEnterpriseAuditLog(currentUser.user_id, currentUser.name, currentUser.approval_level || 'Staff', 'Download', `Downloaded document ${doc.name} for ${doc.reqId}`);
-                  }} className="p-2 bg-white/20 hover:bg-white/40 rounded-full text-white backdrop-blur-sm">
+                  }} className="p-2 bg-white/20 hover:bg-white/40 rounded-full text-white backdrop-blur-sm cursor-pointer" title="ดาวน์โหลด">
                     <Download className="h-5 w-5" />
                   </a>
                 </div>
@@ -249,7 +255,7 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filteredDocs.map(doc => (
+              {filteredDocs.map((doc, docIdx) => (
                 <tr key={doc.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
@@ -273,15 +279,18 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-2">
                       <button onClick={() => { 
+                        setViewerIndex(docIdx);
                         setViewerItem(doc); 
                         setViewerOpen(true); 
+                        setViewerZoomScale(1);
+                        setViewerRotation(0);
                         addEnterpriseAuditLog(currentUser.user_id, currentUser.name, currentUser.approval_level || 'Staff', 'Preview', `Previewed document ${doc.name} for ${doc.reqId}`);
-                      }} className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg transition-colors">
+                      }} className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30 rounded-lg transition-colors cursor-pointer" title="ดูตัวอย่าง">
                         <ZoomIn className="h-4 w-4" />
                       </button>
                       <a href={doc.url} download={doc.name} onClick={() => {
                         addEnterpriseAuditLog(currentUser.user_id, currentUser.name, currentUser.approval_level || 'Staff', 'Download', `Downloaded document ${doc.name} for ${doc.reqId}`);
-                      }} className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-lg transition-colors">
+                      }} className="p-1.5 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-lg transition-colors cursor-pointer" title="ดาวน์โหลด">
                         <Download className="h-4 w-4" />
                       </a>
                     </div>
@@ -294,112 +303,170 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
       )}
 
       {/* Viewer Modal */}
-      {viewerOpen && viewerItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-sm p-4">
-          <button 
-            className="absolute top-6 right-6 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors z-50"
-            onClick={() => { setViewerOpen(false); setViewerItem(null); }}
-          >
-            <X className="h-6 w-6" />
-          </button>
+      {viewerOpen && filteredDocs.length > 0 && (() => {
+        const currentDoc = filteredDocs[viewerIndex] || viewerItem || filteredDocs[0];
+        const isPdf = currentDoc.ext === 'pdf' || 
+                      String(currentDoc.url || '').toLowerCase().includes('pdf') || 
+                      String(currentDoc.url || '').toLowerCase().startsWith('data:application/pdf') || 
+                      String(currentDoc.url || '').toLowerCase().startsWith('jvberi');
 
-          <div className="relative w-full max-w-5xl h-[85vh] flex flex-col items-center justify-center">
-            {viewerItem.ext !== 'pdf' ? (
-              <img 
-                src={viewerItem.url} 
-                alt="evidence preview" 
-                className="max-w-full max-h-full object-contain rounded-xl shadow-2xl transition-transform duration-300"
-                id="gallery-viewer-img"
-              />
-            ) : (
-              <iframe 
-                src={getSafePreviewUrl(viewerItem.url)} 
-                className="w-full h-full border-0 rounded-xl bg-white"
-                title="pdf preview"
-              />
+        const safeUrl = getSafePreviewUrl(currentDoc.url);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-sm p-4">
+            <button 
+              className="absolute top-6 right-6 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors z-50 cursor-pointer"
+              onClick={() => { setViewerOpen(false); setViewerItem(null); setViewerZoomScale(1); setViewerRotation(0); }}
+              title="ปิด"
+            >
+              <X className="h-6 w-6" />
+            </button>
+
+            {/* Navigation Buttons (หน้าก่อนหน้า / หน้าถัดไป) */}
+            {filteredDocs.length > 1 && (
+              <>
+                <button 
+                  className="absolute left-6 top-1/2 -translate-y-1/2 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-3 rounded-full transition-colors z-50 cursor-pointer"
+                  onClick={() => {
+                    const newIdx = viewerIndex === 0 ? filteredDocs.length - 1 : viewerIndex - 1;
+                    setViewerIndex(newIdx);
+                    setViewerItem(filteredDocs[newIdx]);
+                    setViewerZoomScale(1);
+                    setViewerRotation(0);
+                  }}
+                  title="หน้าก่อนหน้า"
+                >
+                  <ChevronLeft className="h-8 w-8" />
+                </button>
+                <button 
+                  className="absolute right-6 top-1/2 -translate-y-1/2 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-3 rounded-full transition-colors z-50 cursor-pointer"
+                  onClick={() => {
+                    const newIdx = viewerIndex === filteredDocs.length - 1 ? 0 : viewerIndex + 1;
+                    setViewerIndex(newIdx);
+                    setViewerItem(filteredDocs[newIdx]);
+                    setViewerZoomScale(1);
+                    setViewerRotation(0);
+                  }}
+                  title="หน้าถัดไป"
+                >
+                  <ChevronRight className="h-8 w-8" />
+                </button>
+              </>
             )}
-            
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-white/10 backdrop-blur-md px-6 py-3 rounded-full shadow-2xl border border-white/20 text-white z-50">
-              <span className="text-xs font-bold mr-2">{viewerItem.reqId}</span>
-              <div className="h-4 w-px bg-white/20"></div>
+
+            {/* Viewer Content */}
+            <div className="relative w-full max-w-5xl h-[85vh] flex flex-col items-center justify-center overflow-hidden">
+              {isPdf ? (
+                <iframe 
+                  src={safeUrl} 
+                  className="w-full h-full border-0 rounded-xl bg-white shadow-2xl"
+                  title="PDF Preview"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center overflow-auto p-2">
+                  <img 
+                    src={currentDoc.url} 
+                    alt={currentDoc.name || "evidence preview"} 
+                    style={{
+                      transform: `scale(${viewerZoomScale}) rotate(${viewerRotation}deg)`,
+                      transition: 'transform 0.2s ease-in-out'
+                    }}
+                    className="max-w-full max-h-full object-contain rounded-xl shadow-2xl origin-center"
+                  />
+                </div>
+              )}
               
-              <button 
-                onClick={() => {
-                  const img = document.getElementById('gallery-viewer-img');
-                  if (img) {
-                    const currentScale = parseFloat(img.style.transform.replace('scale(', '').replace(')', '') || '1');
-                    img.style.transform = `scale(${currentScale + 0.25})`;
-                  }
-                }}
-                className="hover:text-primary-400 transition-colors"
-              >
-                <ZoomIn className="h-5 w-5" />
-              </button>
-              <button 
-                onClick={() => {
-                  const img = document.getElementById('gallery-viewer-img');
-                  if (img) {
-                    const currentScale = parseFloat(img.style.transform.replace('scale(', '').replace(')', '') || '1');
-                    img.style.transform = `scale(${Math.max(0.5, currentScale - 0.25)})`;
-                  }
-                }}
-                className="hover:text-primary-400 transition-colors"
-              >
-                <ZoomOut className="h-5 w-5" />
-              </button>
-              <button 
-                onClick={() => {
-                  const img = document.getElementById('gallery-viewer-img');
-                  if (img) {
-                    const currentRot = parseInt(img.dataset.rot || '0') + 90;
-                    img.dataset.rot = currentRot.toString();
-                    const currentScale = parseFloat(img.style.transform.replace(/.*scale\\(([^)]+)\\).*/, '$1') || '1');
-                    img.style.transform = `scale(${currentScale}) rotate(${currentRot}deg)`;
-                  }
-                }}
-                className="hover:text-primary-400 transition-colors"
-              >
-                <RotateCw className="h-5 w-5" />
-              </button>
-              
-              <div className="h-4 w-px bg-white/20"></div>
-              <a href={viewerItem.url} download={viewerItem.name} onClick={() => {
-                addEnterpriseAuditLog(currentUser.user_id, currentUser.name, currentUser.approval_level || 'Staff', 'Download', `Downloaded document ${viewerItem.name} for ${viewerItem.reqId}`);
-              }} className="hover:text-emerald-400 transition-colors">
-                <Download className="h-5 w-5" />
-              </a>
-              <button 
-                onClick={() => {
-                  addEnterpriseAuditLog(currentUser.user_id, currentUser.name, currentUser.approval_level || 'Staff', 'Print', `Printed document ${viewerItem.name} for ${viewerItem.reqId}`);
-                  const w: any = {
-      document: {
-        write: (html: string) => { w._html = (w._html || '') + html; },
-        close: () => { openPdfPreview(w._html, 'เอกสาร (PDF Preview)'); }
-      },
-      print: () => {},
-      close: () => {}
-    };
-                  if (w) {
-                    w.document.write(`
-                      <html>
-                        <body style="margin:0;display:flex;justify-content:center;background:#ccc;" onload="setTimeout(() => { window.print(); window.close(); }, 500)">
-                          ${viewerItem.ext !== 'pdf' 
-                            ? `<img src="${viewerItem.url}" style="max-width:100%;max-height:100vh;object-fit:contain;" />` 
-                            : `<iframe src="${viewerItem.url}" style="width:100vw;height:100vh;border:0;"></iframe>`}
-                        </body>
-                      </html>
-                    `);
-                    w.document.close();
-                  }
-                }}
-                className="hover:text-amber-400 transition-colors"
-              >
-                <Printer className="h-5 w-5" />
-              </button>
+              {/* Viewer Controls */}
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-slate-900/90 backdrop-blur-md px-6 py-3 rounded-full shadow-2xl border border-white/20 text-white z-50">
+                <span className="text-xs font-bold text-slate-200">
+                  {currentDoc.reqId}
+                </span>
+                <span className="text-xs text-slate-400">
+                  ({viewerIndex + 1} / {filteredDocs.length})
+                </span>
+                <div className="h-4 w-px bg-white/20"></div>
+                
+                {!isPdf && (
+                  <>
+                    <button 
+                      onClick={() => setViewerZoomScale(s => Math.min(3, Math.round((s + 0.25) * 100) / 100))}
+                      className="p-1.5 hover:bg-white/20 rounded-lg text-slate-200 hover:text-white transition-colors cursor-pointer"
+                      title="ขยาย (Zoom In)"
+                    >
+                      <ZoomIn className="h-5 w-5" />
+                    </button>
+                    <button 
+                      onClick={() => setViewerZoomScale(s => Math.max(0.5, Math.round((s - 0.25) * 100) / 100))}
+                      className="p-1.5 hover:bg-white/20 rounded-lg text-slate-200 hover:text-white transition-colors cursor-pointer"
+                      title="ย่อ (Zoom Out)"
+                    >
+                      <ZoomOut className="h-5 w-5" />
+                    </button>
+                    <button 
+                      onClick={() => setViewerRotation(r => (r + 90) % 360)}
+                      className="p-1.5 hover:bg-white/20 rounded-lg text-slate-200 hover:text-white transition-colors cursor-pointer"
+                      title="หมุนรูป (Rotate)"
+                    >
+                      <RotateCw className="h-5 w-5" />
+                    </button>
+                    {(viewerZoomScale !== 1 || viewerRotation !== 0) && (
+                      <button 
+                        onClick={() => { setViewerZoomScale(1); setViewerRotation(0); }}
+                        className="text-[10px] font-bold px-2 py-1 bg-white/20 hover:bg-white/30 rounded-md text-white transition-colors cursor-pointer"
+                        title="คืนค่าเดิม"
+                      >
+                        Reset
+                      </button>
+                    )}
+                    <div className="h-4 w-px bg-white/20"></div>
+                  </>
+                )}
+                
+                <a 
+                  href={currentDoc.url} 
+                  download={currentDoc.name || `document_${currentDoc.reqId}`}
+                  onClick={() => {
+                    addEnterpriseAuditLog(currentUser.user_id, currentUser.name, currentUser.approval_level || 'Staff', 'Download', `Downloaded document ${currentDoc.name} for ${currentDoc.reqId}`);
+                  }}
+                  className="p-1.5 hover:bg-emerald-500/30 rounded-lg text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
+                  title="ดาวน์โหลด (Download)"
+                >
+                  <Download className="h-5 w-5" />
+                </a>
+                
+                <button 
+                  onClick={() => {
+                    addEnterpriseAuditLog(currentUser.user_id, currentUser.name, currentUser.approval_level || 'Staff', 'Print', `Printed document ${currentDoc.name} for ${currentDoc.reqId}`);
+                    if (isPdf) {
+                      openPdfPreview(`
+                        <html>
+                          <head><title>${currentDoc.name || 'เอกสารแนบ'}</title></head>
+                          <body style="margin:0;padding:0;background:#0f172a;">
+                            <iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe>
+                          </body>
+                        </html>
+                      `, currentDoc.name || 'เอกสารแนบ');
+                    } else {
+                      printHtmlDirectly(`
+                        <html>
+                          <head><title>${currentDoc.name || 'หลักฐานแนบ'}</title></head>
+                          <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#ffffff;">
+                            <img src="${currentDoc.url}" style="max-width:100%;max-height:100vh;object-fit:contain;" onload="window.print();" />
+                          </body>
+                        </html>
+                      `);
+                    }
+                  }}
+                  className="p-1.5 hover:bg-amber-500/30 rounded-lg text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                  title="พิมพ์เอกสาร (Print)"
+                >
+                  <Printer className="h-5 w-5" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

@@ -981,18 +981,34 @@ export function getRealReceiptAttachments(req: ExpenseRequest): { name: string; 
   return result;
 }
 
+const pdfBlobCache = new Map<string, string>();
+
 export function getSafePreviewUrl(url: string): string {
   if (!url) return '';
-  if (url.startsWith('data:application/pdf;base64,')) {
+  if (pdfBlobCache.has(url)) {
+    return pdfBlobCache.get(url)!;
+  }
+
+  const lower = url.toLowerCase();
+  const isPdfDataUrl = lower.startsWith('data:application/pdf');
+  const isPdfRawBase64 = !url.startsWith('http') && !url.startsWith('/') && !url.startsWith('blob:') && (url.startsWith('JVBERi') || url.includes('application/pdf'));
+
+  if (isPdfDataUrl || isPdfRawBase64) {
     try {
-      const base64 = url.split(',')[1];
-      const binary = atob(base64);
+      let base64Part = url;
+      if (url.includes(',')) {
+        base64Part = url.split(',')[1];
+      }
+      base64Part = base64Part.trim();
+      const binary = atob(base64Part);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) {
         bytes[i] = binary.charCodeAt(i);
       }
       const blob = new Blob([bytes], { type: 'application/pdf' });
-      return URL.createObjectURL(blob);
+      const objectUrl = URL.createObjectURL(blob);
+      pdfBlobCache.set(url, objectUrl);
+      return objectUrl;
     } catch (e) {
       console.warn('PDF blob conversion failed:', e);
       return url;

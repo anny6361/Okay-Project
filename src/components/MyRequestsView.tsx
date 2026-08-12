@@ -28,7 +28,7 @@ import {
   ZoomOut
 } from 'lucide-react';
 import { ExpenseRequest, ExpenseCategory, UserProfile } from '../types';
-import { MOCK_RECEIPTS, CATEGORIES_CONFIG } from '../data/masterData';
+import { CATEGORIES_CONFIG } from '../data/masterData';
 import { getDbDepartments, getDbCategories, saveDbCategories, getDbReplacementPolicy, getClearingStatusInfo, getRealWorkflowStepInfo, getSafePreviewUrl, getDbRequests, getDbCompanyData } from '../data/db';
 import { getLetterheadHtml } from '../utils/letterheadHtml';
 
@@ -300,8 +300,7 @@ export default function MyRequestsView({
     setDepartment(currentUser.department);
   }, [currentUser]);
   
-  // OCR & Receipt simulation states
-  const [selectedReceiptId, setSelectedReceiptId] = useState('');
+  // OCR & Receipt states
   const [isScanning, setIsScanning] = useState(false);
   const [receiptAttached, setReceiptAttached] = useState<string | null>(null);
   const [receiptAttachedList, setReceiptAttachedList] = useState<string[]>([]);
@@ -316,6 +315,8 @@ export default function MyRequestsView({
 
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
+  const [viewerZoomScale, setViewerZoomScale] = useState(1);
+  const [viewerRotation, setViewerRotation] = useState(0);
   
   const [categorySearch, setCategorySearch] = useState('');
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
@@ -388,8 +389,17 @@ export default function MyRequestsView({
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Server returned ${response.status}: ${errorText}`);
+        let errMessage = `Server returned ${response.status}`;
+        try {
+          const errJson = await response.json();
+          if (errJson && errJson.error) {
+            errMessage = errJson.error;
+          }
+        } catch {
+          const text = await response.text();
+          if (text) errMessage = text;
+        }
+        throw new Error(errMessage);
       }
 
       const result = await response.json();
@@ -420,6 +430,10 @@ export default function MyRequestsView({
         if (ocr.vat && ocr.vat > 0) {
           setHasVat(true);
           setVatAmount(ocr.vat);
+        } else if (ocr.hasVat || ocr.taxId) {
+          setHasVat(true);
+          const autoVat = ocr.amount && ocr.amount > 0 ? Math.round((ocr.amount * 7 / 107) * 100) / 100 : 0;
+          setVatAmount(autoVat);
         } else {
           setHasVat(false);
           setVatAmount(0);
@@ -473,8 +487,14 @@ export default function MyRequestsView({
 
   // Real File OCR processing function using Gemini backend proxy
   const processFileForOCR = async (fileInput: File | FileList) => {
-    const isFileList = fileInput instanceof FileList;
-    const files: File[] = isFileList ? Array.from(fileInput) : [fileInput];
+    let files: File[] = [];
+    if (fileInput instanceof FileList) {
+      files = Array.from(fileInput);
+    } else if (fileInput instanceof File) {
+      files = [fileInput];
+    } else if (Array.isArray(fileInput)) {
+      files = fileInput;
+    }
 
     if (files.length === 0) return;
 
@@ -495,24 +515,18 @@ export default function MyRequestsView({
         reader.readAsDataURL(file);
       });
 
-      // Upload to storage for persistent URL
-      let persistentUrl = localDataUrl;
-      try {
-        persistentUrl = await uploadToStorage('uploads/' + Date.now() + '_' + file.name, file);
-      } catch (e) {
-        console.warn('Storage upload error, using local dataUrl:', e);
-      }
+      if (!localDataUrl) continue;
 
       const fileObj = {
         name: file.name,
         type: file.type || 'image/jpeg',
         size: file.size,
-        dataUrl: persistentUrl,
+        dataUrl: localDataUrl,
         rawBase64: localDataUrl
       };
 
       newUploadedFiles.push(fileObj);
-      newReceiptUrls.push(persistentUrl);
+      newReceiptUrls.push(localDataUrl);
 
       // Check if this file can be scanned by OCR (image or PDF)
       const fileTypeLower = (file.type || '').toLowerCase();
@@ -683,36 +697,6 @@ export default function MyRequestsView({
     setPolicyStatus(status);
   }, [amount, category, date, receiptAttachedList, supportingDocType, replacementReason, replacementMerchant, replacementLocation, attachmentList, myRequests, editingId]);
 
-  // Handle OCR selection simulation
-  const handleReceiptSelection = (receiptId: string) => {
-    if (!receiptId) return;
-    
-    setSelectedReceiptId(receiptId);
-    setIsScanning(true);
-
-    setTimeout(() => {
-      const receipt = MOCK_RECEIPTS.find(r => r.id === receiptId);
-      if (receipt) {
-        setTitle(`เบิกจ่ายอัตโนมัติ: ${receipt.merchant}`);
-        setAmount(receipt.amount);
-        setDate(receipt.date);
-        setDescription(`นำเข้าข้อมูลอัตโนมัติผ่าน AI OCR\nร้านค้า: ${receipt.merchant}\nเลขอัตลักษณ์ผู้เสียภาษี: ${receipt.taxId || 'ไม่ระบุ'}\nรายการย่อย:\n${receipt.items.map(i => `- ${i.name} (฿${i.price})`).join('\n')}`);
-        setReceiptAttached(receipt.merchant + '_Receipt.pdf');
-        setReceiptAttachedList([receipt.merchant + '_Receipt.pdf']);
-        
-        // Auto match category based on merchant or keywords
-        if (receipt.merchant.includes('Grab')) {
-          setCategory('travel');
-        } else if (receipt.merchant.includes('สตาบัคส์')) {
-          setCategory('meals');
-        } else if (receipt.merchant.includes('แอดวานซ์')) {
-          setCategory('software');
-        }
-      }
-      setIsScanning(false);
-    }, 1800);
-  };
-
   const startEditing = (req: ExpenseRequest) => {
     setEditingId(req.id);
     setExpenseType(req.expense_type || 'reimbursement');
@@ -779,7 +763,6 @@ export default function MyRequestsView({
     setDate(new Date().toISOString().split('T')[0]);
     setDepartment(currentUser.department || '');
     setDescription('');
-    setSelectedReceiptId('');
     setUploadedFile(null);
     setUploadedFiles([]);
     setReceiptAttached(null);
@@ -833,7 +816,7 @@ export default function MyRequestsView({
       const match = requests.find(r => r.id === selectedAdvanceId);
       const advAmount = match ? match.amount : 0;
       if (amount < advAmount) {
-        const hasAttachment = !!uploadedFile || receiptAttachedList.length > 0 || attachmentList.length > 0 || !!selectedReceiptId;
+        const hasAttachment = !!uploadedFile || receiptAttachedList.length > 0 || attachmentList.length > 0;
         if (!hasAttachment) {
           errors.uploadedFile = 'เนื่องจากยอดใช้จ่ายจริงน้อยกว่าวงเงินยืมทดรอง คุณต้องแนบสลิปหลักฐานการโอนเงินคืนเข้าบัญชีบริษัทก่อนส่งคำขอเคลียร์';
         }
@@ -1543,12 +1526,12 @@ export default function MyRequestsView({
                     <span className="text-[10px] px-2 py-0.5 bg-primary-100 dark:bg-primary-900/30 text-primary-800 dark:text-primary-300 rounded-full font-semibold">แนะนำ</span>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+                  <div className="w-full">
                     
-                    {/* Left Column: Drag & Drop Real File Upload */}
-                    <div className="flex flex-col gap-2">
+                    {/* Full Width Drag & Drop Real File Upload */}
+                    <div className="flex flex-col gap-2 w-full">
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        อัปโหลดใบเสร็จจริง (เครื่องอ่าน AI รองรับ PDF, PNG, JPG, JPEG)
+                        อัปโหลดเอกสารหลักฐานจริง (รองรับ PDF, PNG, JPG, JPEG)
                       </label>
 
                       <div 
@@ -1563,10 +1546,9 @@ export default function MyRequestsView({
                           const files = e.dataTransfer.files;
                           if (files && files.length > 0) {
                             processFileForOCR(files);
-                              e.target.value = '';
                           }
                         }}
-                        className={`relative flex flex-col justify-center items-center border-2 border-dashed rounded-2xl p-4 text-center transition-all min-h-[140px] cursor-pointer ${
+                        className={`relative flex flex-col justify-center items-center border-2 border-dashed rounded-2xl p-5 text-center transition-all min-h-[140px] cursor-pointer ${
                           isDragging 
                             ? 'border-primary-500 bg-primary-50/50 dark:bg-primary-950/20' 
                             : uploadedFiles.length > 0 
@@ -1589,19 +1571,18 @@ export default function MyRequestsView({
                             const files = e.target.files;
                             if (files && files.length > 0) {
                               processFileForOCR(files);
-                              e.target.value = '';
                             }
                           }}
                         />
 
                         {isScanning ? (
                           <div className="flex flex-col items-center gap-3 py-4">
-                            <Loader2 className="h-7 w-7 text-primary-600 dark:text-primary-400 animate-spin" />
+                            <Loader2 className="h-8 w-8 text-primary-600 dark:text-primary-400 animate-spin" />
                             <div>
                               <span className="text-xs font-bold text-slate-700 dark:text-slate-300 animate-pulse block">
                                 AI กำลังสแกนและดึงข้อมูลจากเอกสารแนบ...
                               </span>
-                              <span className="text-[9px] text-slate-400 block mt-1 leading-normal">
+                              <span className="text-[10px] text-slate-400 block mt-1 leading-normal">
                                 ประมวลผลภาพใบเสร็จด้วย AI OCR (Gemini 3.6 Flash)
                               </span>
                             </div>
@@ -1684,49 +1665,18 @@ export default function MyRequestsView({
                             </button>
                           </div>
                         ) : (
-                          <div className="flex flex-col items-center text-slate-500 dark:text-slate-400 gap-2">
-                            <UploadCloud className="h-8 w-8 text-slate-400" />
+                          <div className="flex flex-col items-center text-slate-500 dark:text-slate-400 gap-2 py-2">
+                            <UploadCloud className="h-9 w-9 text-slate-400" />
                             <div>
                               <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
                                 คลิกเพื่อเลือกไฟล์ หรือ ลากวางที่นี่
                               </span>
-                              <span className="text-[9px] text-slate-400 block mt-0.5">
-                                JPG, JPEG, PNG, PDF (สูงสุด 10MB | อัปโหลดได้หลายไฟล์)
+                              <span className="text-[10px] text-slate-400 block mt-0.5">
+                                รองรับไฟล์รูปภาพ JPG, JPEG, PNG หรือ PDF (สูงสุด 10MB | แนบเพิ่มได้หลายไฟล์)
                               </span>
                             </div>
                           </div>
                         )}
-                      </div>
-                    </div>
-
-                    {/* Right Column: Simulated/Mock Fallback */}
-                    <div className="flex flex-col justify-between p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl">
-                      <div className="space-y-1">
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-                          หรือเลือกจากข้อมูลจำลองเพื่อสแกนด่วน (Simulation Option)
-                        </span>
-                        <p className="text-[10px] text-slate-400 leading-normal">
-                          สามารถเลือกใบเสร็จตัวอย่างที่ติดตั้งล่วงหน้าในระบบ เพื่อทดสอบกระบวนการจำลอง AI OCR ได้ทันทีโดยไม่ต้องใช้เอกสารจริง
-                        </p>
-                      </div>
-                      
-                      <div className="mt-3">
-                        <select 
-                          id="ocr-receipt-selector"
-                          value={selectedReceiptId}
-                          onChange={(e) => {
-                            // Clear uploaded file if we use mock simulation
-                            setUploadedFile(null);
-                            setOcrError(null);
-                            handleReceiptSelection(e.target.value);
-                          }}
-                          className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 rounded-xl outline-hidden focus:ring-1 focus:ring-primary-500 font-bold text-slate-700 dark:text-slate-300"
-                        >
-                          <option value="">-- เลือกใบเสร็จสำรองเพื่อวิเคราะห์ --</option>
-                          {MOCK_RECEIPTS.map(r => (
-                            <option key={r.id} value={r.id}>{r.merchant} (฿{r.amount})</option>
-                          ))}
-                        </select>
                       </div>
                     </div>
 
@@ -2162,7 +2112,13 @@ export default function MyRequestsView({
                     type="number" 
                     id="form-amount"
                     value={amount || ''}
-                    onChange={(e) => setAmount(Number(e.target.value))}
+                    onChange={(e) => {
+                      const newAmt = Number(e.target.value);
+                      setAmount(newAmt);
+                      if (hasVat && newAmt > 0) {
+                        setVatAmount(Math.round((newAmt * 7 / 107) * 100) / 100);
+                      }
+                    }}
                     placeholder="ระบุยอดเงินรวม"
                     className={`w-full text-sm p-2.5 bg-slate-50 dark:bg-slate-800 border rounded-xl focus:ring-1 focus:ring-primary-500 focus:bg-white outline-hidden font-bold ${
                       formErrors.amount ? 'border-rose-500 ring-rose-300 text-rose-950 dark:text-rose-200 focus:ring-rose-500 focus:border-rose-500' : 'border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white'
@@ -2178,7 +2134,7 @@ export default function MyRequestsView({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                       <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">ภาษีมูลค่าเพิ่ม (VAT Option)</span>
-                      <span className="text-[10px] text-slate-400 block">เลือกว่าใบเสร็จมีภาษีมูลค่าเพิ่มหรือไม่ (หากไม่มี จะไม่มีการบังคับกรอกเลขผู้เสียภาษี)</span>
+                      <span className="text-[10px] text-slate-400 block">เลือกว่าใบเสร็จมีภาษีมูลค่าเพิ่มหรือไม่ (คำนวณ 7% จากยอดเงินสุทธิให้อัตโนมัติ)</span>
                     </div>
                     
                     <div className="flex bg-slate-200 dark:bg-slate-800 p-1 rounded-xl shrink-0 self-start sm:self-center">
@@ -2186,6 +2142,9 @@ export default function MyRequestsView({
                         type="button"
                         onClick={() => {
                           setHasVat(true);
+                          if (amount > 0) {
+                            setVatAmount(Math.round((amount * 7 / 107) * 100) / 100);
+                          }
                         }}
                         className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
                           hasVat
@@ -2221,9 +2180,22 @@ export default function MyRequestsView({
                   {hasVat && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-200/50 dark:border-slate-750">
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1" htmlFor="form-vat-amount">
-                          จำนวนภาษีมูลค่าเพิ่ม (VAT Amount) <span className="text-rose-500">*</span>
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400" htmlFor="form-vat-amount">
+                            จำนวนภาษีมูลค่าเพิ่ม (VAT Amount) <span className="text-rose-500">*</span>
+                          </label>
+                          {amount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setVatAmount(Math.round((amount * 7 / 107) * 100) / 100);
+                              }}
+                              className="text-[10px] text-primary-600 dark:text-primary-400 hover:underline font-bold"
+                            >
+                              ⚡ คำนวณ 7% (฿{(Math.round((amount * 7 / 107) * 100) / 100).toLocaleString()})
+                            </button>
+                          )}
+                        </div>
                         <input
                           type="number"
                           id="form-vat-amount"
@@ -2720,7 +2692,7 @@ export default function MyRequestsView({
                                                 <body onload="setTimeout(() => { window.print(); window.close(); }, 500)">
                                                   ${file.type.startsWith('image/') 
                                                     ? `<img src="${file.dataUrl}" class="print-content" />` 
-                                                    : `<iframe src="${file.dataUrl}" style="width:100vw; height:100vh; border:none;"></iframe>`}
+                                                    : `<iframe src="${getSafePreviewUrl(file.dataUrl)}" style="width:100vw; height:100vh; border:none;"></iframe>`}
                                                 </body>
                                               </html>
                                             `);
@@ -2968,142 +2940,166 @@ export default function MyRequestsView({
       )}
 
       {/* Evidence Viewer Fullscreen Modal */}
-      {viewerOpen && attachmentList.length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-sm p-4">
-          <button 
-            className="absolute top-6 right-6 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors z-50"
-            onClick={() => setViewerOpen(false)}
-          >
-            <X className="h-6 w-6" />
-          </button>
+      {viewerOpen && attachmentList.length > 0 && (() => {
+        const currentAtt = attachmentList[viewerIndex] || attachmentList[0];
+        const attType = String(currentAtt?.type || '').toLowerCase();
+        const attUrl = String(currentAtt?.dataUrl || '').toLowerCase();
 
-          {/* Navigation */}
-          {attachmentList.length > 1 && (
-            <>
-              <button 
-                className="absolute left-6 top-1/2 -translate-y-1/2 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-3 rounded-full transition-colors z-50"
-                onClick={() => setViewerIndex(prev => prev === 0 ? attachmentList.length - 1 : prev - 1)}
-              >
-                <ChevronLeft className="h-8 w-8" />
-              </button>
-              <button 
-                className="absolute right-6 top-1/2 -translate-y-1/2 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-3 rounded-full transition-colors z-50"
-                onClick={() => setViewerIndex(prev => prev === attachmentList.length - 1 ? 0 : prev + 1)}
-              >
-                <ChevronRight className="h-8 w-8" />
-              </button>
-            </>
-          )}
+        const isPdf = attType.includes('pdf') || 
+                      attUrl.startsWith('data:application/pdf') || 
+                      attUrl.includes('.pdf') || 
+                      attUrl.startsWith('jvberi');
 
-          {/* Viewer Content */}
-          <div className="relative w-full max-w-5xl h-[85vh] flex flex-col items-center justify-center">
-            {String(attachmentList[viewerIndex]?.type || '').startsWith('image/') ? (
-              <img 
-                src={attachmentList[viewerIndex].dataUrl} 
-                alt="evidence preview" 
-                className="max-w-full max-h-full object-contain rounded-xl shadow-2xl transition-transform duration-300"
-                id="evidence-viewer-img"
-              />
-            ) : (
-              <iframe 
-                src={attachmentList[viewerIndex].dataUrl} 
-                className="w-full h-full border-0 rounded-xl bg-white"
-                title="pdf preview"
-              />
+        const safeUrl = getSafePreviewUrl(currentAtt.dataUrl);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-sm p-4">
+            <button 
+              className="absolute top-6 right-6 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors z-50 cursor-pointer"
+              onClick={() => {
+                setViewerOpen(false);
+                setViewerZoomScale(1);
+                setViewerRotation(0);
+              }}
+              title="ปิด"
+            >
+              <X className="h-6 w-6" />
+            </button>
+
+            {/* Navigation Buttons (หน้าก่อนหน้า / หน้าถัดไป) */}
+            {attachmentList.length > 1 && (
+              <>
+                <button 
+                  className="absolute left-6 top-1/2 -translate-y-1/2 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-3 rounded-full transition-colors z-50 cursor-pointer"
+                  onClick={() => {
+                    setViewerIndex(prev => prev === 0 ? attachmentList.length - 1 : prev - 1);
+                    setViewerZoomScale(1);
+                    setViewerRotation(0);
+                  }}
+                  title="หน้าก่อนหน้า"
+                >
+                  <ChevronLeft className="h-8 w-8" />
+                </button>
+                <button 
+                  className="absolute right-6 top-1/2 -translate-y-1/2 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-3 rounded-full transition-colors z-50 cursor-pointer"
+                  onClick={() => {
+                    setViewerIndex(prev => prev === attachmentList.length - 1 ? 0 : prev + 1);
+                    setViewerZoomScale(1);
+                    setViewerRotation(0);
+                  }}
+                  title="หน้าถัดไป"
+                >
+                  <ChevronRight className="h-8 w-8" />
+                </button>
+              </>
             )}
-            
-            {/* Viewer Controls */}
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-white/10 backdrop-blur-md px-6 py-3 rounded-full shadow-2xl border border-white/20 text-white z-50">
-              <span className="text-xs font-bold mr-2">
-                {viewerIndex + 1} / {attachmentList.length}
-              </span>
-              <div className="h-4 w-px bg-white/20"></div>
+
+            {/* Viewer Content */}
+            <div className="relative w-full max-w-5xl h-[85vh] flex flex-col items-center justify-center overflow-hidden">
+              {isPdf ? (
+                <iframe 
+                  src={safeUrl} 
+                  className="w-full h-full border-0 rounded-xl bg-white shadow-2xl"
+                  title="PDF Preview"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center overflow-auto p-2">
+                  <img 
+                    src={currentAtt.dataUrl} 
+                    alt={currentAtt.name || "evidence preview"} 
+                    style={{
+                      transform: `scale(${viewerZoomScale}) rotate(${viewerRotation}deg)`,
+                      transition: 'transform 0.2s ease-in-out'
+                    }}
+                    className="max-w-full max-h-full object-contain rounded-xl shadow-2xl origin-center"
+                  />
+                </div>
+              )}
               
-              <button 
-                onClick={() => {
-                  const img = document.getElementById('evidence-viewer-img');
-                  if (img) {
-                    const currentScale = parseFloat(img.style.transform.replace('scale(', '').replace(')', '') || '1');
-                    img.style.transform = `scale(${currentScale + 0.25})`;
-                  }
-                }}
-                className="hover:text-primary-400 transition-colors"
-                title="Zoom In"
-              >
-                <ZoomIn className="h-5 w-5" />
-              </button>
-              <button 
-                onClick={() => {
-                  const img = document.getElementById('evidence-viewer-img');
-                  if (img) {
-                    const currentScale = parseFloat(img.style.transform.replace('scale(', '').replace(')', '') || '1');
-                    img.style.transform = `scale(${Math.max(0.5, currentScale - 0.25)})`;
-                  }
-                }}
-                className="hover:text-primary-400 transition-colors"
-                title="Zoom Out"
-              >
-                <ZoomOut className="h-5 w-5" />
-              </button>
-              <button 
-                onClick={() => {
-                  const img = document.getElementById('evidence-viewer-img');
-                  if (img) {
-                    const currentRot = parseInt(img.dataset.rot || '0') + 90;
-                    img.dataset.rot = currentRot.toString();
-                    const currentScale = parseFloat(img.style.transform.replace(/.*scale\(([^)]+)\).*/, '$1') || '1');
-                    img.style.transform = `scale(${currentScale}) rotate(${currentRot}deg)`;
-                  }
-                }}
-                className="hover:text-primary-400 transition-colors"
-                title="Rotate"
-              >
-                <RotateCw className="h-5 w-5" />
-              </button>
-              
-              <div className="h-4 w-px bg-white/20"></div>
-              
-              <a 
-                href={attachmentList[viewerIndex].dataUrl} 
-                download={attachmentList[viewerIndex].name}
-                className="hover:text-emerald-400 transition-colors"
-                title="Download"
-              >
-                <Download className="h-5 w-5" />
-              </a>
-              <button 
-                onClick={() => {
-                  const w: any = {
-      document: {
-        write: (html: string) => { w._html = (w._html || '') + html; },
-        close: () => { openPdfPreview(w._html, 'เอกสาร (PDF Preview)'); }
-      },
-      print: () => {},
-      close: () => {}
-    };
-                  if (w) {
-                    w.document.write(`
-                      <html>
-                        <head><title>พิมพ์เอกสาร</title></head>
-                        <body style="margin:0;display:flex;justify-content:center;background:#ccc;" onload="setTimeout(() => { window.print(); window.close(); }, 500)">
-                          ${String(attachmentList[viewerIndex]?.type || '').startsWith('image/') 
-                            ? `<img src="${attachmentList[viewerIndex].dataUrl}" style="max-width:100%;max-height:100vh;object-fit:contain;" />` 
-                            : `<iframe src="${attachmentList[viewerIndex].dataUrl}" style="width:100vw;height:100vh;border:0;"></iframe>`}
-                        </body>
-                      </html>
-                    `);
-                    w.document.close();
-                  }
-                }}
-                className="hover:text-amber-400 transition-colors"
-                title="Print"
-              >
-                <Printer className="h-5 w-5" />
-              </button>
+              {/* Viewer Controls */}
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-slate-900/90 backdrop-blur-md px-6 py-3 rounded-full shadow-2xl border border-white/20 text-white z-50">
+                <span className="text-xs font-bold mr-1 text-slate-200">
+                  {viewerIndex + 1} / {attachmentList.length}
+                </span>
+                <div className="h-4 w-px bg-white/20"></div>
+                
+                {!isPdf && (
+                  <>
+                    <button 
+                      onClick={() => setViewerZoomScale(s => Math.min(3, Math.round((s + 0.25) * 100) / 100))}
+                      className="p-1.5 hover:bg-white/20 rounded-lg text-slate-200 hover:text-white transition-colors cursor-pointer"
+                      title="ขยาย (Zoom In)"
+                    >
+                      <ZoomIn className="h-5 w-5" />
+                    </button>
+                    <button 
+                      onClick={() => setViewerZoomScale(s => Math.max(0.5, Math.round((s - 0.25) * 100) / 100))}
+                      className="p-1.5 hover:bg-white/20 rounded-lg text-slate-200 hover:text-white transition-colors cursor-pointer"
+                      title="ย่อ (Zoom Out)"
+                    >
+                      <ZoomOut className="h-5 w-5" />
+                    </button>
+                    <button 
+                      onClick={() => setViewerRotation(r => (r + 90) % 360)}
+                      className="p-1.5 hover:bg-white/20 rounded-lg text-slate-200 hover:text-white transition-colors cursor-pointer"
+                      title="หมุนรูป (Rotate)"
+                    >
+                      <RotateCw className="h-5 w-5" />
+                    </button>
+                    {(viewerZoomScale !== 1 || viewerRotation !== 0) && (
+                      <button 
+                        onClick={() => { setViewerZoomScale(1); setViewerRotation(0); }}
+                        className="text-[10px] font-bold px-2 py-1 bg-white/20 hover:bg-white/30 rounded-md text-white transition-colors cursor-pointer"
+                        title="คืนค่าเดิม"
+                      >
+                        Reset
+                      </button>
+                    )}
+                    <div className="h-4 w-px bg-white/20"></div>
+                  </>
+                )}
+                
+                <a 
+                  href={currentAtt.dataUrl} 
+                  download={currentAtt.name || `document_${viewerIndex + 1}`}
+                  className="p-1.5 hover:bg-emerald-500/30 rounded-lg text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer"
+                  title="ดาวน์โหลด (Download)"
+                >
+                  <Download className="h-5 w-5" />
+                </a>
+                
+                <button 
+                  onClick={() => {
+                    if (isPdf) {
+                      openPdfPreview(`
+                        <html>
+                          <head><title>${currentAtt.name || 'เอกสารแนบ'}</title></head>
+                          <body style="margin:0;padding:0;background:#0f172a;">
+                            <iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe>
+                          </body>
+                        </html>
+                      `, currentAtt.name || 'เอกสารแนบ');
+                    } else {
+                      printHtmlDirectly(`
+                        <html>
+                          <head><title>${currentAtt.name || 'หลักฐานแนบ'}</title></head>
+                          <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#ffffff;">
+                            <img src="${currentAtt.dataUrl}" style="max-width:100%;max-height:100vh;object-fit:contain;" onload="window.print();" />
+                          </body>
+                        </html>
+                      `);
+                    }
+                  }}
+                  className="p-1.5 hover:bg-amber-500/30 rounded-lg text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
+                  title="พิมพ์เอกสาร (Print)"
+                >
+                  <Printer className="h-5 w-5" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

@@ -44,7 +44,8 @@ import {
   getDbUsers,
   getDbCompanyData,
   getDbRequests,
-  getRealReceiptImages
+  getRealReceiptImages,
+  getSafePreviewUrl
 } from '../data/db';
 import { saveToFirestore } from '../lib/firestore-sync';
 import { CompanyLetterhead } from './CompanyLetterhead';
@@ -2089,7 +2090,7 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
                         <div className="flex-1 flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-900/30">
                           {isPdf ? (
                             <iframe
-                              src={activeDoc.url}
+                              src={getSafePreviewUrl(activeDoc.url)}
                               className="w-full h-[350px] rounded-lg border border-slate-200 dark:border-slate-800 bg-white"
                               title="PDF Preview Frame"
                             ></iframe>

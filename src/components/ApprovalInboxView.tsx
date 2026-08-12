@@ -789,12 +789,24 @@ export default function ApprovalInboxView({
                   type="button"
                   onClick={() => {
                     const safeUrl = getSafePreviewUrl(selectedImage || '');
-                    const win = window.open();
-                    if (win) {
-                      win.document.write(`<html><head><title>หลักฐานแนบ</title></head><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#0f172a;"><iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe></body></html>`);
+                    let win: Window | null = null;
+                    try {
+                      win = window.open(safeUrl, '_blank');
+                    } catch (e) {
+                      console.warn('window.open blocked:', e);
+                    }
+                    if (!win) {
+                      openPdfPreview(`
+                        <html>
+                          <head><title>หลักฐานแนบ</title></head>
+                          <body style="margin:0;padding:0;background:#0f172a;display:flex;justify-content:center;align-items:center;">
+                            <iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe>
+                          </body>
+                        </html>
+                      `, 'เอกสารหลักฐานแนบ');
                     }
                   }}
-                  className="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                  className="px-3 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                   title="เปิดในแท็บใหม่"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
@@ -858,9 +870,21 @@ export default function ApprovalInboxView({
                         <button
                           type="button"
                           onClick={() => {
-                            const win = window.open();
-                            if (win) {
-                              win.document.write(`<html><head><title>เอกสารแนบ</title></head><body style="margin:0;display:flex;align-items:center;justify-content:center;background:#0f172a;"><iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe></body></html>`);
+                            let win: Window | null = null;
+                            try {
+                              win = window.open(safeUrl, '_blank');
+                            } catch (e) {
+                              console.warn('window.open blocked:', e);
+                            }
+                            if (!win) {
+                              openPdfPreview(`
+                                <html>
+                                  <head><title>เอกสารแนบ</title></head>
+                                  <body style="margin:0;padding:0;background:#0f172a;display:flex;justify-content:center;align-items:center;">
+                                    <iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe>
+                                  </body>
+                                </html>
+                              `, 'เอกสารแนบ');
                             }
                           }}
                           className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm transition-all cursor-pointer"

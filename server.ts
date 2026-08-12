@@ -136,126 +136,96 @@ app.post("/api/ocr", async (req, res) => {
       }
     }
 
-    if (typeof fileData === 'string' && fileData.includes(",")) {
-      const parts = fileData.split(",");
-      if (parts[0].includes(';base64') && parts[0].includes('data:')) {
-        const matchedMime = parts[0].match(/data:(.*?);/);
-        if (matchedMime && matchedMime[1]) {
-          mimeType = matchedMime[1];
+    if (typeof fileData === 'string') {
+      if (fileData.includes(",")) {
+        const parts = fileData.split(",");
+        if (parts[0].includes(';base64') && parts[0].includes('data:')) {
+          const matchedMime = parts[0].match(/data:(.*?);/);
+          if (matchedMime && matchedMime[1]) {
+            mimeType = matchedMime[1];
+          }
         }
+        fileData = parts[1];
       }
-      fileData = parts[1];
+    }
+
+    // Clean base64 string safely
+    const cleanBase64 = typeof fileData === 'string'
+      ? Buffer.from(fileData.replace(/-/g, '+').replace(/_/g, '/').replace(/\s/g, ''), 'base64').toString('base64')
+      : '';
+
+    if (!cleanBase64) {
+      return res.status(400).json({ success: false, error: "Invalid image or base64 file data" });
     }
 
     // Normalize MIME type to standard IANA values
     let cleanMime = (mimeType || 'image/jpeg').toLowerCase().trim();
     if (cleanMime === 'image/jpg' || cleanMime === 'pjpeg') cleanMime = 'image/jpeg';
     if (!cleanMime || cleanMime === 'application/octet-stream') {
-      if (typeof fileData === 'string') {
-        if (fileData.startsWith('/9j/')) cleanMime = 'image/jpeg';
-        else if (fileData.startsWith('iVBORw')) cleanMime = 'image/png';
-        else if (fileData.startsWith('JVBER')) cleanMime = 'application/pdf';
-        else if (fileData.startsWith('R0lGOD')) cleanMime = 'image/gif';
-        else if (fileData.startsWith('UklGR')) cleanMime = 'image/webp';
-        else cleanMime = 'image/jpeg';
-      } else {
-        cleanMime = 'image/jpeg';
+      if (cleanBase64.startsWith('/9j/')) cleanMime = 'image/jpeg';
+      else if (cleanBase64.startsWith('iVBORw')) cleanMime = 'image/png';
+      else if (cleanBase64.startsWith('JVBER')) cleanMime = 'application/pdf';
+      else if (cleanBase64.startsWith('R0lGOD')) cleanMime = 'image/gif';
+      else if (cleanBase64.startsWith('UklGR')) cleanMime = 'image/webp';
+      else cleanMime = 'image/jpeg';
+    }
+
+    const ai = getGeminiClient();
+
+    const filePart = {
+      inlineData: {
+        mimeType: cleanMime,
+        data: cleanBase64
+      }
+    };
+
+    const promptText = `คุณเป็นระบบวิเคราะห์และดึงข้อมูลใบเสร็จรับเงินอัจฉริยะ (Receipt OCR AI)
+ให้อ่านไฟล์ภาพหรือ PDF ของใบเสร็จนี้ และสกัดข้อมูลออกมาตอบกลับในรูปแบบ JSON เท่านั้น ดังนี้:
+{
+  "merchant": "ชื่อร้านค้า หรือผู้ให้บริการ (เช่น Grab, PTT, AWS, Starbucks, 7-Eleven, MK, เซเว่น)",
+  "date": "วันที่ทำรายการ รูปแบบ YYYY-MM-DD (เช่น 2026-08-11)",
+  "invoiceId": "เลขที่ใบเสร็จ หรือ เลขที่ใบกำกับภาษี / Receipt No. (ถ้ามี)",
+  "taxId": "เลขประจำตัวผู้เสียภาษี 13 หลัก (ถ้ามี)",
+  "amount": 0.00, // จำนวนเงินรวมสุทธิ Total Amount (ตัวเลขเท่านั้น)
+  "hasVat": true, // true หากเป็นใบกำกับภาษี หรือมี VAT 7% หรือมี taxId
+  "vat": 0.00, // ภาษีมูลค่าเพิ่ม VAT 7% (ถ้าไม่แยกยอดชัดเจน แต่มี VAT ให้คำนวณ = round(amount * 7 / 107, 2))
+  "confidence": 95, // ความมั่นใจของ AI 0-100
+  "items": [
+    { "name": "ชื่อรายการสินค้าหรือบริการ", "price": 0.00 }
+  ]
+}
+ข้อกำหนดเพิ่มเติม:
+1. amount และ vat ต้องเป็นตัวเลขเท่านั้น (number)
+2. หากเป็นใบกำกับภาษี/มี Tax ID หรือมี VAT 7% ให้กำหนด "hasVat": true และหากไม่มีแยกยอด vat ไว้ ให้คำนวณ vat = round(amount * 7 / 107, 2)
+3. หากเป็นภาพใบเสร็จแต่หาข้อมูลไม่พบ ให้ประเมินชื่อร้านและยอดเงินจากตัวเลขรวมที่เด่นชัดที่สุดในภาพ
+4. ตอบเฉพาะข้อความ JSON เท่านั้น ห้ามมีคำอธิบายอื่นนอกเหนือจาก JSON`;
+
+    let response = null;
+    const primaryModels = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-3.1-pro-preview"];
+    let lastError: any = null;
+
+    for (const modelName of primaryModels) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: [filePart, promptText],
+          config: {
+            responseMimeType: "application/json"
+          }
+        });
+        if (response && response.text) break;
+      } catch (mErr: any) {
+        lastError = mErr;
+        console.warn(`Model ${modelName} failed for OCR:`, mErr?.message || mErr);
       }
     }
 
-    let parsedData = null;
-
-    try {
-      const ai = getGeminiClient();
-
-      // Prepare file data inline representation
-      const filePart = {
-        inlineData: {
-          mimeType: cleanMime,
-          data: fileData
-        }
-      };
-
-      const promptPart = {
-        text: "คุณเป็นระบบวิเคราะห์และดึงข้อมูลใบเสร็จรับเงินอัจฉริยะ (Receipt OCR AI) ให้อ่านไฟล์ภาพหรือ PDF ของใบเสร็จนี้ และสกัดข้อมูลสำคัญตามโครงสร้าง JSON Schema ที่กำหนดอย่างเที่ยงตรงที่สุด หากฟิลด์ใดหาไม่เจอหรืออ่านไม่ได้ให้ข้ามไปหรือใช้ค่าเริ่มต้นที่เหมาะสม"
-      };
-
-      // Call Gemini API using valid model identifiers (gemini-2.5-flash)
-      let response = null;
-      const primaryModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
-      let lastError: any = null;
-
-      for (const modelName of primaryModels) {
-        try {
-          response = await ai.models.generateContent({
-            model: modelName,
-            contents: { parts: [filePart, promptPart] },
-            config: {
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  merchant: { type: Type.STRING, description: "ชื่อร้านค้า หรือผู้ให้บริการ เช่น Grab, PTT, AWS, Starbucks, 7-Eleven" },
-                  date: { type: Type.STRING, description: "วันที่ทำรายการ รูปแบบ YYYY-MM-DD เช่น 2026-07-02" },
-                  invoiceId: { type: Type.STRING, description: "เลขใบเสร็จ / เลขที่ใบกำกับภาษี / Receipt No." },
-                  taxId: { type: Type.STRING, description: "เลขประจำตัวผู้เสียภาษี (Tax ID 13 หลัก)" },
-                  amount: { type: Type.NUMBER, description: "จำนวนเงินรวมสุทธิ (Total Amount)" },
-                  vat: { type: Type.NUMBER, description: "ภาษีมูลค่าเพิ่ม (VAT Amount ถ้ามี)" },
-                  confidence: { type: Type.NUMBER, description: "ความมั่นใจของ AI ในการสกัดข้อมูล (0-100)" },
-                  items: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        name: { type: Type.STRING, description: "รายละเอียดรายการสินค้า/บริการ" },
-                        price: { type: Type.NUMBER, description: "ราคา" }
-                      },
-                      required: ["name", "price"]
-                    },
-                    description: "รายละเอียดรายการแต่ละชิ้น"
-                  }
-                },
-                required: ["merchant", "amount"]
-              }
-            }
-          });
-          if (response && response.text) break;
-        } catch (mErr) {
-          lastError = mErr;
-          console.warn(`Model ${modelName} failed for OCR, trying next model:`, mErr);
-        }
-      }
-
-      if (!response && lastError) {
-        throw lastError;
-      }
-
-      const text = response?.text;
-      if (text) {
-        const cleanJson = text.replace(/```json/gi, "").replace(/```/g, "").trim();
-        parsedData = JSON.parse(cleanJson);
-      }
-    } catch (aiError: any) {
-      console.warn("Gemini OCR AI Call failed, attempting fallback parsing:", aiError?.message || aiError);
-      
-      // Smart Fallback extraction if Gemini API encounters temporary rate limits or missing key
-      parsedData = {
-        merchant: "ร้านค้าตามเอกสารแนบ",
-        date: new Date().toISOString().split('T')[0],
-        invoiceId: "REC-" + Math.floor(100000 + Math.random() * 900000),
-        taxId: "0105560001234",
-        amount: 350,
-        vat: 22.90,
-        confidence: 85,
-        items: [
-          { name: "รายการสินค้า/บริการตามหลักฐานภาพถ่าย", price: 350 }
-        ]
-      };
+    if (!response || !response.text) {
+      throw lastError || new Error("Gemini AI ไม่สามารถประมวลผลข้อมูลจากรูปภาพนี้ได้");
     }
 
-    if (!parsedData) {
-      throw new Error("ไม่สามารถประมวลผลข้อมูลใบเสร็จได้");
-    }
+    const cleanJson = response.text.replace(/```json/gi, "").replace(/```/g, "").trim();
+    const parsedData = JSON.parse(cleanJson);
 
     return res.json({ success: true, data: parsedData });
 
@@ -276,25 +246,33 @@ app.post("/api/idcard-ocr", async (req, res) => {
       return res.status(400).json({ success: false, error: "Missing fileData" });
     }
 
-    if (fileData.includes(",")) {
-      const parts = fileData.split(",");
-      if (parts[0].includes(';base64') && parts[0].includes('data:')) {
-        const matchedMime = parts[0].match(/data:(.*?);/);
-        if (matchedMime && matchedMime[1]) {
-          mimeType = matchedMime[1];
+    if (typeof fileData === 'string') {
+      if (fileData.includes(",")) {
+        const parts = fileData.split(",");
+        if (parts[0].includes(';base64') && parts[0].includes('data:')) {
+          const matchedMime = parts[0].match(/data:(.*?);/);
+          if (matchedMime && matchedMime[1]) {
+            mimeType = matchedMime[1];
+          }
         }
+        fileData = parts[1];
       }
-      fileData = parts[1];
+    }
+
+    const cleanBase64 = typeof fileData === 'string'
+      ? Buffer.from(fileData.replace(/-/g, '+').replace(/_/g, '/').replace(/\s/g, ''), 'base64').toString('base64')
+      : '';
+
+    if (!cleanBase64) {
+      return res.status(400).json({ success: false, error: "Invalid image or base64 file data" });
     }
 
     let cleanMime = (mimeType || 'image/jpeg').toLowerCase().trim();
     if (cleanMime === 'image/jpg' || cleanMime === 'pjpeg') cleanMime = 'image/jpeg';
     if (!cleanMime || cleanMime === 'application/octet-stream') {
-      if (typeof fileData === 'string') {
-        if (fileData.startsWith('/9j/')) cleanMime = 'image/jpeg';
-        else if (fileData.startsWith('iVBORw')) cleanMime = 'image/png';
-        else cleanMime = 'image/jpeg';
-      }
+      if (cleanBase64.startsWith('/9j/')) cleanMime = 'image/jpeg';
+      else if (cleanBase64.startsWith('iVBORw')) cleanMime = 'image/png';
+      else cleanMime = 'image/jpeg';
     }
 
     const ai = getGeminiClient();
@@ -302,57 +280,48 @@ app.post("/api/idcard-ocr", async (req, res) => {
     const filePart = {
       inlineData: {
         mimeType: cleanMime,
-        data: fileData
+        data: cleanBase64
       }
     };
 
-    const promptPart = {
-      text: "คุณเป็นระบบ AI อ่านและสกัดข้อมูลจากบัตรประจำตัวประชาชนไทย (Thai National ID Card Scanner) ให้อ่านไฟล์ภาพบัตรประชาชนและสกัดข้อมูลดังนี้:\n- idCard: เลขประจำตัวประชาชน 13 หลัก (ตัวเลขล้วน)\n- title: คำนำหน้าชื่อ (นาย, นาง, นางสาว)\n- firstName: ชื่อจริงภาษาไทย\n- lastName: นามสกุลภาษาไทย\n- birthDate: วันเกิด ค.ศ. รูปแบบ YYYY-MM-DD (หากในบัตรเป็น พ.ศ. ให้แปลงเป็น ค.ศ. โดยลบ 543 เช่น พ.ศ. 2535 -> 1992)\n- gender: เพศ โดยใช้ 'male' หรือ 'female'\n- address: ที่อยู่ตามบัตรประชาชน"
-    };
+    const promptText = `คุณเป็นระบบ AI อ่านและสกัดข้อมูลจากบัตรประจำตัวประชาชนไทย (Thai National ID Card Scanner)
+ให้อ่านไฟล์ภาพบัตรประชาชนและส่งคืนผลลัพธ์เป็น JSON เท่านั้น ดังนี้:
+{
+  "idCard": "เลขประจำตัวประชาชน 13 หลัก (ตัวเลขล้วน)",
+  "title": "คำนำหน้าชื่อ (นาย, นาง, นางสาว)",
+  "firstName": "ชื่อจริงภาษาไทย",
+  "lastName": "นามสกุลภาษาไทย",
+  "birthDate": "วันเกิด ค.ศ. รูปแบบ YYYY-MM-DD (หากในบัตรเป็น พ.ศ. ให้แปลงเป็น ค.ศ. โดยลบ 543)",
+  "gender": "male หรือ female",
+  "address": "ที่อยู่ตามบัตรประชาชน"
+}
+ตอบเฉพาะข้อความ JSON เท่านั้น ห้ามมีคำอธิบายอื่น`;
 
     let response = null;
-    const primaryModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+    const primaryModels = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-3.1-pro-preview"];
     let lastError: any = null;
 
     for (const modelName of primaryModels) {
       try {
         response = await ai.models.generateContent({
           model: modelName,
-          contents: { parts: [filePart, promptPart] },
+          contents: [filePart, promptText],
           config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                idCard: { type: Type.STRING, description: "เลขบัตรประจำตัวประชาชน 13 หลัก" },
-                title: { type: Type.STRING, description: "คำนำหน้าชื่อ เช่น นาย, นาง, นางสาว" },
-                firstName: { type: Type.STRING, description: "ชื่อจริงภาษาไทย" },
-                lastName: { type: Type.STRING, description: "นามสกุลภาษาไทย" },
-                birthDate: { type: Type.STRING, description: "วันเกิด ค.ศ. YYYY-MM-DD" },
-                gender: { type: Type.STRING, description: "เพศ male หรือ female" },
-                address: { type: Type.STRING, description: "ที่อยู่ตามบัตรประชาชน" }
-              },
-              required: ["idCard", "firstName", "lastName"]
-            }
+            responseMimeType: "application/json"
           }
         });
         if (response && response.text) break;
-      } catch (mErr) {
+      } catch (mErr: any) {
         lastError = mErr;
-        console.warn(`Model ${modelName} failed for ID card OCR, trying next model:`, mErr);
+        console.warn(`Model ${modelName} failed for ID card OCR:`, mErr?.message || mErr);
       }
     }
 
-    if (!response && lastError) {
-      throw lastError;
+    if (!response || !response.text) {
+      throw lastError || new Error("AI ไม่สามารถอ่านข้อมูลจากภาพบัตรประชาชนนี้ได้");
     }
 
-    const text = response?.text;
-    if (!text) {
-      throw new Error("AI did not return any readable text from ID card image.");
-    }
-
-    const cleanJson = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+    const cleanJson = response.text.replace(/```json/gi, "").replace(/```/g, "").trim();
     const parsedData = JSON.parse(cleanJson);
     return res.json({ success: true, data: parsedData });
 

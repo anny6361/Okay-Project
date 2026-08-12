@@ -1,13 +1,16 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { subscribePdfPreview, closePdfPreview } from '../lib/pdf-preview';
 import { X, Printer, Download, ExternalLink, FileText, Loader2, CheckCircle2 } from 'lucide-react';
-import { downloadHtmlAsPdf, printHtmlDirectly } from '../utils/pdfGenerator';
+import { downloadHtmlAsPdf, printHtmlDirectly, cleanCssText } from '../utils/pdfGenerator';
+import { getSafePreviewUrl } from '../data/db';
 
 function getSanitizedPrintHtml(rawHtml: string) {
   // Strip out any automatic window.close() calls and onload attributes that interfere with printing
   let clean = rawHtml
     .replace(/window\.close\(\);?/gi, '')
     .replace(/onload=\s*(['"])(.*?)\1|onload=\s*([^\s>]+)/gi, '');
+
+  clean = cleanCssText(clean);
 
   // Add optimal print styles for A4 paper and exact color rendering
   const printStyles = `
@@ -41,10 +44,52 @@ function getSanitizedPrintHtml(rawHtml: string) {
   return clean;
 }
 
+function extractPreviewTarget(htmlContent: string) {
+  if (!htmlContent) return { isPdfUrl: false, isImgUrl: false, targetUrl: '', cleanHtml: '' };
+
+  let clean = htmlContent
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/window\.close\(\);?/gi, '')
+    .replace(/onload=\s*(['"])(.*?)\1|onload=\s*([^\s>]+)/gi, '');
+
+  clean = cleanCssText(clean);
+
+  // Check 1: Does the HTML contain an iframe with src (e.g. PDF wrapper or document wrapper)?
+  const iframeSrcMatch = htmlContent.match(/<iframe\s+[^>]*src=["']([^"']+)["']/i);
+  if (iframeSrcMatch && iframeSrcMatch[1]) {
+    const rawUrl = iframeSrcMatch[1];
+    return {
+      isPdfUrl: true,
+      isImgUrl: false,
+      targetUrl: rawUrl,
+      cleanHtml: clean
+    };
+  }
+
+  // Check 2: Is the HTML a simple wrapper around an img?
+  const imgSrcMatch = htmlContent.match(/<img\s+[^>]*src=["']([^"']+)["']/i);
+  if (imgSrcMatch && imgSrcMatch[1] && htmlContent.length < 3500 && !htmlContent.includes('<table')) {
+    return {
+      isPdfUrl: false,
+      isImgUrl: true,
+      targetUrl: imgSrcMatch[1],
+      cleanHtml: clean
+    };
+  }
+
+  return {
+    isPdfUrl: false,
+    isImgUrl: false,
+    targetUrl: '',
+    cleanHtml: clean
+  };
+}
+
 export default function PdfPreviewModal() {
   const [content, setContent] = useState<{html: string, title: string} | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
+  const [htmlBlobUrl, setHtmlBlobUrl] = useState<string>('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -52,56 +97,122 @@ export default function PdfPreviewModal() {
   }, []);
 
   useEffect(() => {
-    if (content && iframeRef.current) {
-      const doc = iframeRef.current.contentWindow?.document;
-      if (doc) {
-        const sanitized = getSanitizedPrintHtml(content.html);
-        doc.open();
-        doc.write(sanitized);
-        doc.close();
-      }
-    }
+    setDownloadSuccess(false);
   }, [content]);
+
+  const parsed = useMemo(() => {
+    if (!content?.html) return null;
+    return extractPreviewTarget(content.html);
+  }, [content?.html]);
+
+  useEffect(() => {
+    if (!parsed || parsed.isPdfUrl || parsed.isImgUrl) {
+      setHtmlBlobUrl('');
+      return;
+    }
+
+    const sanitizedHtml = getSanitizedPrintHtml(parsed.cleanHtml);
+    const blob = new Blob([sanitizedHtml], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    setHtmlBlobUrl(url);
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [parsed]);
 
   if (!content) return null;
 
   const handleOpenNewWindowPrint = () => {
-    if (!content) return;
-    printHtmlDirectly(content.html);
+    if (!content || !parsed) return;
+
+    if (parsed.isPdfUrl && parsed.targetUrl) {
+      const safeUrl = getSafePreviewUrl(parsed.targetUrl);
+      window.open(safeUrl, '_blank');
+      return;
+    }
+
+    if (parsed.isImgUrl && parsed.targetUrl) {
+      window.open(parsed.targetUrl, '_blank');
+      return;
+    }
+
+    if (htmlBlobUrl) {
+      window.open(htmlBlobUrl, '_blank');
+      return;
+    }
+
+    const sanitized = getSanitizedPrintHtml(parsed.cleanHtml || content.html);
+    const blob = new Blob([sanitized], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
   };
 
   const handlePrint = () => {
-    if (!content) return;
-    const cleanHtml = getSanitizedPrintHtml(content.html);
+    if (!content || !parsed) return;
 
-    // 1. Try iframe print directly
-    try {
-      if (iframeRef.current?.contentWindow) {
-        iframeRef.current.contentWindow.focus();
-        iframeRef.current.contentWindow.print();
-        return;
-      }
-    } catch (e) {
-      console.warn('Iframe modal print error:', e);
+    if (parsed.isPdfUrl && parsed.targetUrl) {
+      const safeUrl = getSafePreviewUrl(parsed.targetUrl);
+      printHtmlDirectly(`
+        <div style="width:100%;height:100vh;">
+          <iframe src="${safeUrl}" style="width:100%;height:100vh;border:none;"></iframe>
+        </div>
+      `);
+    } else if (parsed.isImgUrl && parsed.targetUrl) {
+      printHtmlDirectly(`
+        <div style="text-align:center;padding:20px;">
+          <img src="${parsed.targetUrl}" style="max-width:100%;max-height:85vh;object-fit:contain;border-radius:8px;" />
+        </div>
+      `);
+    } else {
+      printHtmlDirectly(parsed.cleanHtml || content.html);
     }
-
-    // 2. Fallback to direct top document print
-    printHtmlDirectly(cleanHtml);
   };
 
   const handleDownloadPdf = async () => {
-    if (!content || isGenerating) return;
+    if (!content || !parsed || isGenerating) return;
     setIsGenerating(true);
     setDownloadSuccess(false);
 
     try {
-      const cleanHtml = getSanitizedPrintHtml(content.html);
-      await downloadHtmlAsPdf(cleanHtml, content.title || 'document');
+      const title = content.title || 'document';
+
+      // Case 1: Embedded PDF file (dataUrl / blob / http)
+      if (parsed.isPdfUrl && parsed.targetUrl) {
+        const safeUrl = getSafePreviewUrl(parsed.targetUrl);
+        const a = document.createElement('a');
+        a.href = safeUrl;
+        a.download = title.toLowerCase().endsWith('.pdf') ? title : `${title}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        setDownloadSuccess(true);
+        setTimeout(() => setDownloadSuccess(false), 3000);
+        return;
+      }
+
+      // Case 2: Embedded Image file
+      if (parsed.isImgUrl && parsed.targetUrl) {
+        const imgHtml = `
+          <div style="width:100%;text-align:center;padding:10px;">
+            <img src="${parsed.targetUrl}" style="max-width:100%;max-height:270mm;object-fit:contain;border-radius:8px;" />
+          </div>
+        `;
+        await downloadHtmlAsPdf(imgHtml, title);
+        setDownloadSuccess(true);
+        setTimeout(() => setDownloadSuccess(false), 3000);
+        return;
+      }
+
+      // Case 3: Rich HTML Document
+      const sanitizedHtml = getSanitizedPrintHtml(parsed.cleanHtml || content.html);
+      await downloadHtmlAsPdf(sanitizedHtml, title);
       setDownloadSuccess(true);
       setTimeout(() => setDownloadSuccess(false), 3000);
+
     } catch (err) {
       console.error('PDF Download failed, falling back to HTML download:', err);
-      // Fallback to HTML file if PDF compilation failed
       handleDownloadHtml();
     } finally {
       setIsGenerating(false);
@@ -109,18 +220,18 @@ export default function PdfPreviewModal() {
   };
 
   const handleDownloadHtml = () => {
-    if (!content) return;
-    const cleanHtml = getSanitizedPrintHtml(content.html);
-    const blob = new Blob([cleanHtml], { type: 'text/html;charset=utf-8' });
+    if (!content || !parsed) return;
+    const sanitized = getSanitizedPrintHtml(parsed.cleanHtml || content.html);
+    const blob = new Blob([sanitized], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${content.title || 'document'}.html`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
-
-  if (!content) return null;
 
   return (
     <div className="fixed inset-0 z-[9999] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 md:p-8">
@@ -199,16 +310,39 @@ export default function PdfPreviewModal() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden bg-slate-100 dark:bg-slate-950 p-2 md:p-4">
-          <iframe 
-            ref={iframeRef}
-            className="w-full h-full bg-white rounded-xl shadow-sm border border-slate-200"
-            title="PDF Preview"
-            sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
-          />
+        <div className="flex-1 overflow-hidden bg-slate-100 dark:bg-slate-950 p-2 md:p-4 relative flex items-center justify-center">
+          {parsed?.isPdfUrl && parsed.targetUrl ? (
+            <iframe 
+              ref={iframeRef}
+              src={getSafePreviewUrl(parsed.targetUrl)}
+              className="w-full h-full bg-white rounded-xl shadow-sm border border-slate-200 dark:border-slate-800"
+              title={content.title || "PDF Preview"}
+            />
+          ) : parsed?.isImgUrl && parsed.targetUrl ? (
+            <div className="w-full h-full flex items-center justify-center overflow-auto p-4 bg-slate-200/50 dark:bg-slate-900 rounded-xl">
+              <img 
+                src={parsed.targetUrl} 
+                alt={content.title || "Image Preview"}
+                className="max-w-full max-h-full object-contain rounded-xl shadow-lg"
+              />
+            </div>
+          ) : htmlBlobUrl ? (
+            <iframe 
+              ref={iframeRef}
+              src={htmlBlobUrl}
+              className="w-full h-full bg-white rounded-xl shadow-sm border border-slate-200 dark:border-slate-800"
+              title={content.title || "Document Preview"}
+            />
+          ) : (
+            <div className="flex items-center gap-2 text-slate-400">
+              <Loader2 className="animate-spin h-5 w-5" />
+              <span>กำลังโหลดเอกสาร...</span>
+            </div>
+          )}
         </div>
 
       </div>
     </div>
   );
 }
+

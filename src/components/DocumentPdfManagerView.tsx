@@ -150,20 +150,9 @@ export default function DocumentPdfManagerView() {
     };
   };
 
-  // Generate complete A4 template and open Native Browser print view
+  // Generate complete A4 template and open PDF Preview & Print modal
   const handlePrint = () => {
     if (!selectedRequest) return;
-    
-    const printWindow: any = {
-      document: {
-        open: () => { printWindow._html = ''; },
-        write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
-        close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
-      },
-      print: () => {},
-      close: () => {}
-    };
-    if (!printWindow) return;
 
     const companyLogo = companyData?.logoUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=60';
     const companyName = companyData?.companyName || 'บริษัท โอเค เอ็กซ์เพนส์ แมเนจเมนท์ จำกัด';
@@ -234,7 +223,7 @@ export default function DocumentPdfManagerView() {
         <div style="display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 12px; font-weight: bold; margin: auto 2px;">➔</div>
       `);
 
-      printWindow.document.write(`
+      const replacementContent = `
         <html>
           <head>
             <title>ใบแทนใบเสร็จรับเงิน - ${selectedRequest.replacement_receipt_number || selectedRequest.id}</title>
@@ -558,8 +547,17 @@ export default function DocumentPdfManagerView() {
             </div>
           </body>
         </html>
-      `);
-      printWindow.document.close();
+      `;
+      openPdfPreview({
+        html: replacementContent,
+        title: `ใบแทนใบเสร็จรับเงิน - ${selectedRequest.replacement_receipt_number || selectedRequest.id}`,
+        attachments: allAttachments.map((url, i) => ({
+          url,
+          title: `หลักฐานแนบ #${i + 1}`,
+          name: `หลักฐาน #${i + 1}`,
+          type: (url.toLowerCase().includes('.pdf') || url.startsWith('data:application/pdf')) ? 'pdf' : 'image'
+        }))
+      });
       return;
     }
 
@@ -1078,9 +1076,16 @@ export default function DocumentPdfManagerView() {
       </html>
     `;
 
-    printWindow.document.open();
-    printWindow.document.write(content);
-    printWindow.document.close();
+    openPdfPreview({
+      html: content,
+      title: `${selectedRequest.title || 'เอกสาร'} - ${selectedRequest.id}`,
+      attachments: allAttachments.map((url, i) => ({
+        url,
+        title: `${selectedRequest.title} - หลักฐานแนบ #${i + 1}`,
+        name: `หลักฐาน #${i + 1}`,
+        type: (url.toLowerCase().includes('.pdf') || url.startsWith('data:application/pdf')) ? 'pdf' : 'image'
+      }))
+    });
   };
 
   return (
@@ -1388,7 +1393,25 @@ export default function DocumentPdfManagerView() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-3">
                       {attachments.map((imgUrl, idx) => (
-                        <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 shadow-sm">
+                        <div 
+                          key={idx} 
+                          onClick={() => {
+                            const isPdf = imgUrl.toLowerCase().includes('.pdf') || imgUrl.startsWith('data:application/pdf');
+                            openPdfPreview({
+                              html: '',
+                              title: `${selectedRequest.title} - ${idx === 0 ? 'ใบเสร็จหลัก' : `เอกสารแนบ #${idx + 1}`}`,
+                              fileUrl: imgUrl,
+                              items: attachments.map((url, i) => ({
+                                url,
+                                title: `${selectedRequest.title} - ${i === 0 ? 'ใบเสร็จหลัก' : `เอกสารแนบ #${i + 1}`}`,
+                                type: (url.toLowerCase().includes('.pdf') || url.startsWith('data:application/pdf')) ? 'pdf' : 'image',
+                                name: i === 0 ? 'ใบเสร็จหลัก' : `เอกสารแนบ #${i + 1}`
+                              })),
+                              initialIndex: idx
+                            });
+                          }}
+                          className="relative group aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 shadow-sm cursor-pointer hover:ring-2 hover:ring-indigo-500/50 transition-all"
+                        >
                           <img 
                             src={imgUrl} 
                             className="w-full h-full object-cover" 
@@ -1409,7 +1432,10 @@ export default function DocumentPdfManagerView() {
                           {idx > 0 && (
                             <button
                               type="button"
-                              onClick={() => handleDeleteAttachment(idx)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteAttachment(idx);
+                              }}
                               className="absolute top-1 right-1 bg-red-500/90 hover:bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer shadow-md scale-90"
                               title="ลบเอกสารแนบ"
                             >

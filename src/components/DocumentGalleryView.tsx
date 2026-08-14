@@ -438,25 +438,18 @@ export default function DocumentGalleryView({ currentUser }: { currentUser: any 
                 <button 
                   onClick={() => {
                     addEnterpriseAuditLog(currentUser.user_id, currentUser.name, currentUser.approval_level || 'Staff', 'Print', `Printed document ${currentDoc.name} for ${currentDoc.reqId}`);
-                    if (isPdf) {
-                      openPdfPreview(`
-                        <html>
-                          <head><title>${currentDoc.name || 'เอกสารแนบ'}</title></head>
-                          <body style="margin:0;padding:0;background:#0f172a;">
-                            <iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe>
-                          </body>
-                        </html>
-                      `, currentDoc.name || 'เอกสารแนบ');
-                    } else {
-                      printHtmlDirectly(`
-                        <html>
-                          <head><title>${currentDoc.name || 'หลักฐานแนบ'}</title></head>
-                          <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#ffffff;">
-                            <img src="${currentDoc.url}" style="max-width:100%;max-height:100vh;object-fit:contain;" onload="window.print();" />
-                          </body>
-                        </html>
-                      `);
-                    }
+                    openPdfPreview({
+                      fileUrl: safeUrl,
+                      fileType: isPdf ? 'pdf' : 'image',
+                      title: currentDoc.name || 'เอกสารแนบ',
+                      items: filteredDocs.map(d => ({
+                        url: getSafePreviewUrl(d.url),
+                        title: d.name || 'เอกสารแนบ',
+                        name: d.name || 'เอกสารแนบ',
+                        type: (d.url.toLowerCase().includes('.pdf') || d.url.startsWith('data:application/pdf')) ? 'pdf' : 'image'
+                      })),
+                      initialIndex: viewerIndex
+                    });
                   }}
                   className="p-1.5 hover:bg-amber-500/30 rounded-lg text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
                   title="พิมพ์เอกสาร (Print)"

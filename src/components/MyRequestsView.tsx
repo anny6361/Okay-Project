@@ -118,6 +118,7 @@ export default function MyRequestsView({
   const [hasVat, setHasVat] = useState<boolean>(false);
   const [vatAmount, setVatAmount] = useState<number>(0);
   const [taxId, setTaxId] = useState<string>('');
+  const [aiVatAutoFilled, setAiVatAutoFilled] = useState<boolean>(false);
 
   // Auto-Save Draft
   useEffect(() => {
@@ -428,17 +429,39 @@ export default function MyRequestsView({
           setDate(ocr.date);
         }
 
-        if (ocr.vat && ocr.vat > 0) {
+        // Auto VAT Detection & Processing
+        const totalAmountScanned = (typeof ocr.amount === 'number' && ocr.amount > 0) ? ocr.amount : amount;
+        let detectedVat = 0;
+        if (typeof ocr.vat === 'number' && ocr.vat > 0) {
+          detectedVat = ocr.vat;
+        } else if (totalAmountScanned > 0) {
+          detectedVat = Math.round((totalAmountScanned * 7 / 107) * 100) / 100;
+        }
+
+        const isVatDetected = !!(
+          (ocr.vat && ocr.vat > 0) ||
+          ocr.hasVat ||
+          ocr.taxId ||
+          ocr.invoiceId ||
+          (ocr.merchant && totalAmountScanned > 0)
+        );
+
+        if (isVatDetected) {
           setHasVat(true);
-          setVatAmount(ocr.vat);
-        } else if (ocr.hasVat || ocr.taxId) {
-          setHasVat(true);
-          const autoVat = ocr.amount && ocr.amount > 0 ? Math.round((ocr.amount * 7 / 107) * 100) / 100 : 0;
-          setVatAmount(autoVat);
+          setVatAmount(detectedVat);
+          setAiVatAutoFilled(true);
+          setFormErrors(prev => {
+            const next = { ...prev };
+            delete next.vatAmount;
+            if (ocr.taxId) delete next.taxId;
+            return next;
+          });
         } else {
           setHasVat(false);
           setVatAmount(0);
+          setAiVatAutoFilled(false);
         }
+
         if (ocr.taxId) {
           setTaxId(ocr.taxId);
         } else {
@@ -786,6 +809,7 @@ export default function MyRequestsView({
     setHasVat(false);
     setVatAmount(0);
     setTaxId('');
+    setAiVatAutoFilled(false);
     
     setFormErrors({});
   };
@@ -2134,7 +2158,15 @@ export default function MyRequestsView({
                 <div className="sm:col-span-2 p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-150 dark:border-slate-800/80 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">ภาษีมูลค่าเพิ่ม (VAT Option)</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">ภาษีมูลค่าเพิ่ม (VAT Option)</span>
+                        {aiVatAutoFilled && hasVat && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                            <Sparkles className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                            <span>AI ใส่อัตโนมัติ</span>
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] text-slate-400 block">เลือกว่าใบเสร็จมีภาษีมูลค่าเพิ่มหรือไม่ (คำนวณ 7% จากยอดเงินสุทธิให้อัตโนมัติ)</span>
                     </div>
                     
@@ -2143,6 +2175,7 @@ export default function MyRequestsView({
                         type="button"
                         onClick={() => {
                           setHasVat(true);
+                          setAiVatAutoFilled(false);
                           if (amount > 0) {
                             setVatAmount(Math.round((amount * 7 / 107) * 100) / 100);
                           }
@@ -2161,6 +2194,7 @@ export default function MyRequestsView({
                           setHasVat(false);
                           setVatAmount(0);
                           setTaxId('');
+                          setAiVatAutoFilled(false);
                           // Clear VAT/Tax validation errors if they existed
                           const nextErrors = { ...formErrors };
                           delete nextErrors.vatAmount;
@@ -2177,6 +2211,13 @@ export default function MyRequestsView({
                       </button>
                     </div>
                   </div>
+
+                  {aiVatAutoFilled && hasVat && (
+                    <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/80 rounded-xl flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-200">
+                      <Sparkles className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <span><strong>AI OCR:</strong> ตรวจพบระบบภาษีในเอกสาร และระบุยอด VAT 7% (฿{(vatAmount || 0).toLocaleString()}) ให้อัตโนมัติแล้ว</span>
+                    </div>
+                  )}
 
                   {hasVat && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-200/50 dark:border-slate-750">
@@ -3071,28 +3112,21 @@ export default function MyRequestsView({
                 
                 <button 
                   onClick={() => {
-                    if (isPdf) {
-                      openPdfPreview(`
-                        <html>
-                          <head><title>${currentAtt.name || 'เอกสารแนบ'}</title></head>
-                          <body style="margin:0;padding:0;background:#0f172a;">
-                            <iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe>
-                          </body>
-                        </html>
-                      `, currentAtt.name || 'เอกสารแนบ');
-                    } else {
-                      printHtmlDirectly(`
-                        <html>
-                          <head><title>${currentAtt.name || 'หลักฐานแนบ'}</title></head>
-                          <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#ffffff;">
-                            <img src="${currentAtt.dataUrl}" style="max-width:100%;max-height:100vh;object-fit:contain;" onload="window.print();" />
-                          </body>
-                        </html>
-                      `);
-                    }
+                    openPdfPreview({
+                      fileUrl: safeUrl,
+                      fileType: isPdf ? 'pdf' : 'image',
+                      title: currentAtt.name || 'เอกสารแนบ',
+                      items: attachmentList.map(a => ({
+                        url: getSafePreviewUrl(a.dataUrl),
+                        title: a.name || 'เอกสารแนบ',
+                        name: a.name || 'เอกสารแนบ',
+                        type: (a.dataUrl.toLowerCase().includes('.pdf') || a.dataUrl.startsWith('data:application/pdf')) ? 'pdf' : 'image'
+                      })),
+                      initialIndex: viewerIndex
+                    });
                   }}
                   className="p-1.5 hover:bg-amber-500/30 rounded-lg text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
-                  title="พิมพ์เอกสาร (Print)"
+                  title="พิมพ์ / ดูตัวอย่างเอกสาร (Print & Preview)"
                 >
                   <Printer className="h-5 w-5" />
                 </button>

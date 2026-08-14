@@ -1,4 +1,6 @@
 // Utility to generate, print, and save PDF files reliably across browsers and iframe environments
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 export function oklchToRgb(l: number, c: number, h: number, a: number = 1): string {
   const hRad = (h * Math.PI) / 180;
@@ -192,148 +194,295 @@ export function sanitizeDocumentStylesForHtml2Canvas(): () => void {
   };
 }
 
+export function extractHtmlParts(rawHtml: string) {
+  let clean = rawHtml
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/window\.close\(\);?/gi, '')
+    .replace(/onload=\s*(['"])(.*?)\1|onload=\s*([^\s>]+)/gi, '');
+
+  clean = cleanCssText(clean);
+
+  // Extract <style> blocks
+  const styles: string[] = [];
+  const styleRegex = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
+  let match;
+  while ((match = styleRegex.exec(clean)) !== null) {
+    if (match[1]) {
+      styles.push(match[1]);
+    }
+  }
+
+  // Extract body content
+  let bodyContent = clean;
+  const bodyMatch = clean.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
+  if (bodyMatch && bodyMatch[1]) {
+    bodyContent = bodyMatch[1];
+  } else {
+    bodyContent = bodyContent.replace(/<head\b[^>]*>[\s\S]*?<\/head>/gi, '');
+    bodyContent = bodyContent.replace(/<!DOCTYPE[^>]*>/gi, '');
+    bodyContent = bodyContent.replace(/<\/?html[^>]*>/gi, '');
+  }
+
+  return { styles: styles.join('\n'), bodyContent };
+}
+
+export async function downloadOriginalFile(fileUrl: string, fileName: string = 'document.pdf') {
+  if (!fileUrl) return false;
+  const cleanFileName = fileName.replace(/[\/\\?%*:|"<>]/g, '_').trim();
+  
+  try {
+    if (fileUrl.startsWith('data:')) {
+      const parts = fileUrl.split(',');
+      const mimeMatch = parts[0].match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream';
+      const bstr = atob(parts[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      const blob = new Blob([u8arr], { type: mime });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = cleanFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      return true;
+    } else if (fileUrl.startsWith('blob:')) {
+      const a = document.createElement('a');
+      a.href = fileUrl;
+      a.download = cleanFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return true;
+    } else {
+      try {
+        const response = await fetch(fileUrl);
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = cleanFileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        return true;
+      } catch (fetchErr) {
+        const a = document.createElement('a');
+        a.href = fileUrl;
+        a.download = cleanFileName;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return true;
+      }
+    }
+  } catch (err) {
+    console.error('Error downloading original file:', err);
+    return false;
+  }
+}
+
 export async function downloadHtmlAsPdf(htmlContent: string, fileName: string = 'document.pdf') {
-  // Dynamically import html2pdf.js on demand
-  // @ts-ignore
-  const html2pdfModule = await import('html2pdf.js');
+  if (!htmlContent) return false;
+
+  const rawClean = htmlContent.trim();
+  const cleanFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+
+  // 1. Direct PDF Check: if the input is directly a PDF dataUrl or PDF link, NEVER use canvas
+  if (
+    rawClean.startsWith('data:application/pdf') ||
+    rawClean.startsWith('blob:application/pdf') ||
+    (rawClean.startsWith('http') && rawClean.toLowerCase().includes('.pdf'))
+  ) {
+    return downloadOriginalFile(rawClean, cleanFileName);
+  }
+
+  // 2. Direct Image Check: if the input is directly an image
+  if (
+    rawClean.startsWith('data:image/') ||
+    (/\.(jpg|jpeg|png|webp|gif|svg|bmp)(\?.*)?$/i.test(rawClean) && rawClean.startsWith('http'))
+  ) {
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = rawClean;
+      await new Promise((resolve, reject) => {
+        if (img.complete && img.naturalWidth !== 0) return resolve(true);
+        img.onload = () => resolve(true);
+        img.onerror = () => reject(new Error('Image failed to load'));
+        setTimeout(() => resolve(true), 3000);
+      });
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth(); // 210mm
+      const pdfHeight = pdf.internal.pageSize.getHeight(); // 297mm
+      const margin = 10;
+      const maxW = pdfWidth - margin * 2;
+      const maxH = pdfHeight - margin * 2;
+
+      let renderW = img.naturalWidth || maxW;
+      let renderH = img.naturalHeight || maxH;
+
+      const scale = Math.min(maxW / renderW, maxH / renderH, 1);
+      renderW = renderW * scale;
+      renderH = renderH * scale;
+
+      const posX = margin + (maxW - renderW) / 2;
+      const posY = margin + (maxH - renderH) / 2;
+
+      pdf.addImage(img, 'JPEG', posX, posY, renderW, renderH);
+      pdf.save(cleanFileName);
+      return true;
+    } catch (imgErr) {
+      console.warn('Image to PDF conversion fallback to direct download:', imgErr);
+      return downloadOriginalFile(rawClean, cleanFileName.replace('.pdf', '.png'));
+    }
+  }
+
+  // 3. HTML Document Conversion
+  const { styles, bodyContent } = extractHtmlParts(htmlContent);
+  const restoreStyles = sanitizeDocumentStylesForHtml2Canvas();
 
   const container = document.createElement('div');
   container.className = 'pdf-render-container';
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
+  container.style.position = 'fixed';
   container.style.top = '0px';
-  container.style.width = '800px';
+  container.style.left = '0px';
+  container.style.width = '794px';
+  container.style.minHeight = '1123px';
+  container.style.padding = '36px';
+  container.style.boxSizing = 'border-box';
   container.style.backgroundColor = '#ffffff';
   container.style.color = '#000000';
-  container.style.fontFamily = 'Sarabun, Arial, sans-serif';
+  container.style.zIndex = '999999';
+  container.style.visibility = 'visible';
+  container.style.opacity = '1';
+  container.style.pointerEvents = 'none';
 
-  let cleanHtml = htmlContent
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/window\.close\(\);?/gi, '')
-    .replace(/onload="[^"]*"/gi, '');
-
-  cleanHtml = cleanCssText(cleanHtml);
-
-  const styledHtml = `
-    <div style="background-color: #ffffff !important; color: #000000 !important; padding: 24px; font-family: Sarabun, Arial, sans-serif; min-height: 100%; box-sizing: border-box;">
-      <style>
-        * { color-scheme: light !important; box-sizing: border-box !important; }
-        body, table, td, th, p, span, div, h1, h2, h3, h4, h5, h6 {
-          color: #000000 !important;
-        }
-        .bg-slate-900, .bg-slate-800, .bg-slate-950, .dark\\:bg-slate-900 {
-          background-color: #f8fafc !important;
-          color: #000000 !important;
-        }
-        .text-white, .text-slate-100, .text-slate-200, .dark\\:text-white {
-          color: #000000 !important;
-        }
-        table {
-          border-collapse: collapse !important;
-          width: 100% !important;
-        }
-        th, td {
-          border-color: #cbd5e1 !important;
-        }
-        .no-print, button, .hidden-print {
-          display: none !important;
-        }
-      </style>
-      ${cleanHtml}
+  container.innerHTML = `
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+      * {
+        box-sizing: border-box !important;
+        color-scheme: light !important;
+        font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+      }
+      body {
+        background-color: #ffffff !important;
+        color: #000000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      .no-print, button, .hidden-print {
+        display: none !important;
+      }
+      table {
+        border-collapse: collapse !important;
+        width: 100% !important;
+      }
+      th, td {
+        border-color: #cbd5e1 !important;
+      }
+      .bg-slate-900, .bg-slate-800, .bg-slate-950, .dark\\:bg-slate-900 {
+        background-color: #f8fafc !important;
+        color: #000000 !important;
+      }
+      .text-white, .text-slate-100, .text-slate-200, .dark\\:text-white {
+        color: #000000 !important;
+      }
+      ${styles}
+    </style>
+    <div style="background:#ffffff; color:#000000; width:100%;">
+      ${bodyContent}
     </div>
   `;
 
-  container.innerHTML = styledHtml;
   document.body.appendChild(container);
 
-  const cleanFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
-
-  const opt = {
-    margin: [8, 8, 8, 8] as [number, number, number, number],
-    filename: cleanFileName,
-    image: { type: 'jpeg' as const, quality: 0.98 },
-    html2canvas: {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      logging: false,
-      letterRendering: true,
-      backgroundColor: '#ffffff',
-      windowWidth: 800,
-      onclone: (clonedDoc: Document) => {
-        const clonedContainer = clonedDoc.querySelector('.pdf-render-container') as HTMLElement;
-        if (clonedContainer) {
-          clonedContainer.style.position = 'static';
-          clonedContainer.style.left = '0';
-          clonedContainer.style.top = '0';
-          clonedContainer.style.visibility = 'visible';
-          clonedContainer.style.display = 'block';
-          clonedContainer.style.width = '800px';
-          clonedContainer.style.margin = '0 auto';
-        }
-        
-        Array.from(clonedDoc.body.children).forEach((child) => {
-          if (child !== clonedContainer && !child.classList?.contains('pdf-render-container')) {
-            (child as HTMLElement).style.display = 'none';
-          }
-        });
-        clonedDoc.body.style.backgroundColor = '#ffffff';
-
-        const styles = Array.from(clonedDoc.querySelectorAll('style'));
-        styles.forEach((s) => {
-          if (s.textContent) {
-            s.textContent = cleanCssText(s.textContent);
-          }
-        });
-        const elementsWithStyle = Array.from(clonedDoc.querySelectorAll('[style]'));
-        elementsWithStyle.forEach((el) => {
-          const styleAttr = el.getAttribute('style');
-          if (styleAttr && (styleAttr.includes('oklch') || styleAttr.includes('color-mix') || styleAttr.includes('oklab'))) {
-            el.setAttribute('style', cleanCssText(styleAttr));
-          }
-        });
-      }
-    },
-    jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
-  };
-
-  let restoreStyles: (() => void) | null = null;
-
   try {
-    restoreStyles = sanitizeDocumentStylesForHtml2Canvas();
-
+    // Wait for all images inside container to load
     const images = Array.from(container.querySelectorAll('img'));
     await Promise.all(
       images.map(img => {
-        if (img.complete) return Promise.resolve();
+        if (img.complete && img.naturalWidth !== 0) return Promise.resolve(true);
         return new Promise(resolve => {
-          img.onload = resolve;
-          img.onerror = resolve;
+          img.onload = () => resolve(true);
+          img.onerror = () => resolve(true);
+          setTimeout(() => resolve(true), 2000);
         });
       })
     );
 
-    // @ts-ignore
-    const html2pdfFunc = (html2pdfModule.default || html2pdfModule) as any;
+    // Wait for fonts if available
+    try {
+      if (document.fonts && document.fonts.ready) {
+        await document.fonts.ready;
+      }
+    } catch (e) {}
 
-    await html2pdfFunc().set(opt).from(container).save();
-    return true;
-  } catch (err) {
-    console.error('Error generating PDF:', err);
-    throw err;
-  } finally {
-    if (restoreStyles) {
-      try {
-        restoreStyles();
-      } catch (e) {
-        console.error('Error restoring main document styles:', e);
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      windowWidth: 1024,
+      scrollY: 0,
+      scrollX: 0,
+      x: 0,
+      y: 0
+    });
+
+    if (!canvas || canvas.width === 0 || canvas.height === 0) {
+      throw new Error('Canvas rendering produced empty image');
+    }
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.96);
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pdfWidth = pdf.internal.pageSize.getWidth(); // 210
+    const pdfHeight = pdf.internal.pageSize.getHeight(); // 297
+
+    const imgWidth = pdfWidth;
+    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+
+    if (imgHeight <= pdfHeight) {
+      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
+    } else {
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      while (heightLeft >= 8) {
+        position -= pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
       }
     }
+
+    pdf.save(cleanFileName);
+    return true;
+  } catch (err) {
+    console.error('downloadHtmlAsPdf error, falling back to direct print:', err);
+    printHtmlDirectly(htmlContent);
+    return false;
+  } finally {
     if (document.body.contains(container)) {
       document.body.removeChild(container);
     }
+    restoreStyles();
   }
 }
+
 
 export function printHtmlDirectly(htmlContent: string) {
   let cleanHtml = htmlContent

@@ -742,7 +742,17 @@ export default function RequestDetailModal({ request, onClose, onAddComment, cur
                     </body>
                   </html>
                 `;
-                openPdfPreview(htmlContent, `ใบเบิกเงิน-${request.id}`);
+                const evidenceList = getRealReceiptImages(request);
+                openPdfPreview({
+                  html: htmlContent,
+                  title: `ใบเบิกเงิน-${request.id}`,
+                  attachments: evidenceList.map((url, i) => ({
+                    url,
+                    title: `หลักฐานแนบ #${i + 1}`,
+                    name: `หลักฐาน #${i + 1}`,
+                    type: (url.toLowerCase().includes('.pdf') || url.startsWith('data:application/pdf')) ? 'pdf' : 'image'
+                  }))
+                });
               }}
               className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
             >
@@ -1160,61 +1170,81 @@ export default function RequestDetailModal({ request, onClose, onAddComment, cur
             
             {/* Digital Receipt View */}
             <div className="space-y-3">
-              <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
-                เอกสารหลักฐานแนบ ({getRealReceiptImages(request).length})
-              </h4>
-              {getRealReceiptImages(request).length > 0 ? (
-                <div className="grid grid-cols-2 gap-3">
-                  {getRealReceiptImages(request).map((imgUrl, idx) => {
-                    const urlStr = (imgUrl || '').toLowerCase();
-                    const isPdf = urlStr.startsWith('data:application/pdf') || urlStr.includes('.pdf') || urlStr.startsWith('blob:application/pdf');
-                    const isDoc = urlStr.includes('word') || urlStr.includes('msword') || urlStr.includes('.doc');
-                    const isXls = urlStr.includes('excel') || urlStr.includes('spreadsheet') || urlStr.includes('.xls') || urlStr.includes('.csv');
+              {(() => {
+                const evidenceList = getRealReceiptImages(request);
+                return (
+                  <>
+                    <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
+                      เอกสารหลักฐานแนบ ({evidenceList.length})
+                    </h4>
+                    {evidenceList.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        {evidenceList.map((imgUrl, idx) => {
+                          const urlStr = (imgUrl || '').toLowerCase();
+                          const isPdf = urlStr.startsWith('data:application/pdf') || urlStr.includes('.pdf') || urlStr.startsWith('blob:application/pdf');
+                          const isDoc = urlStr.includes('word') || urlStr.includes('msword') || urlStr.includes('.doc');
+                          const isXls = urlStr.includes('excel') || urlStr.includes('spreadsheet') || urlStr.includes('.xls') || urlStr.includes('.csv');
 
-                    return (
-                      <div 
-                        key={idx} 
-                        className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 aspect-[3/4] shadow-md group cursor-pointer hover:ring-2 hover:ring-primary-500 hover:ring-offset-2 dark:hover:ring-offset-slate-900 transition-all p-2 flex flex-col justify-between"
-                        onClick={() => setSelectedPreviewImage(imgUrl)}
-                      >
-                        {isPdf ? (
-                          <div className="w-full h-full flex flex-col items-center justify-center bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 group-hover:bg-rose-100 dark:group-hover:bg-rose-900/30 transition-colors rounded-xl">
-                            <FileText className="h-10 w-10 mb-2" />
-                            <span className="text-xs font-bold">PDF Document</span>
-                          </div>
-                        ) : isDoc ? (
-                          <div className="w-full h-full flex flex-col items-center justify-center bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors rounded-xl">
-                            <FileText className="h-10 w-10 mb-2" />
-                            <span className="text-xs font-bold">Word Document</span>
-                          </div>
-                        ) : isXls ? (
-                          <div className="w-full h-full flex flex-col items-center justify-center bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30 transition-colors rounded-xl">
-                            <FileSpreadsheet className="h-10 w-10 mb-2" />
-                            <span className="text-xs font-bold">Excel / Spreadsheet</span>
-                          </div>
-                        ) : (
-                          <img 
-                            src={getSafePreviewUrl(imgUrl)} 
-                            className="w-full h-full object-cover rounded-xl transition-transform duration-300 group-hover:scale-105" 
-                            alt="Attached receipt" 
-                            referrerPolicy="no-referrer"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        )}
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-200 rounded-2xl">
-                          <ZoomIn className="h-6 w-6 text-white" />
-                        </div>
+                          return (
+                            <div 
+                              key={idx} 
+                              className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 aspect-[3/4] shadow-md group cursor-pointer hover:ring-2 hover:ring-primary-500 hover:ring-offset-2 dark:hover:ring-offset-slate-900 transition-all p-2 flex flex-col justify-between"
+                              onClick={() => {
+                                openPdfPreview({
+                                  html: '',
+                                  title: `${request.title} - เอกสารแนบ #${idx + 1}`,
+                                  fileUrl: imgUrl,
+                                  items: evidenceList.map((u, i) => ({
+                                    url: u,
+                                    title: `${request.title} - เอกสารแนบ #${i + 1}`,
+                                    type: (u.toLowerCase().includes('.pdf') || u.startsWith('data:application/pdf')) ? 'pdf' : 'image',
+                                    name: `เอกสารแนบ #${i + 1}`
+                                  })),
+                                  initialIndex: idx
+                                });
+                              }}
+                            >
+                              {isPdf ? (
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 group-hover:bg-rose-100 dark:group-hover:bg-rose-900/30 transition-colors rounded-xl">
+                                  <FileText className="h-10 w-10 mb-2" />
+                                  <span className="text-xs font-bold">PDF Document</span>
+                                </div>
+                              ) : isDoc ? (
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-blue-50 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors rounded-xl">
+                                  <FileText className="h-10 w-10 mb-2" />
+                                  <span className="text-xs font-bold">Word Document</span>
+                                </div>
+                              ) : isXls ? (
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-100 dark:group-hover:bg-emerald-900/30 transition-colors rounded-xl">
+                                  <FileSpreadsheet className="h-10 w-10 mb-2" />
+                                  <span className="text-xs font-bold">Excel / Spreadsheet</span>
+                                </div>
+                              ) : (
+                                <img 
+                                  src={getSafePreviewUrl(imgUrl)} 
+                                  className="w-full h-full object-cover rounded-xl transition-transform duration-300 group-hover:scale-105" 
+                                  alt="Attached receipt" 
+                                  referrerPolicy="no-referrer"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                              )}
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity duration-200 rounded-2xl">
+                                <ZoomIn className="h-6 w-6 text-white" />
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="p-6 bg-slate-50 dark:bg-slate-800 text-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-400">
-                  <p className="text-xs">ไม่มีหลักฐานใบเสร็จแนบในระบบ</p>
-                </div>
-              )}
+                    ) : (
+                      <div className="p-6 bg-slate-50 dark:bg-slate-800 text-center rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-400">
+                        <p className="text-xs">ไม่มีหลักฐานใบเสร็จแนบในระบบ</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             {/* Policy flags checklists */}
@@ -1321,39 +1351,21 @@ export default function RequestDetailModal({ request, onClose, onAddComment, cur
                 <button
                   type="button"
                   onClick={() => {
-                    const safeUrl = getSafePreviewUrl(selectedPreviewImage);
-                    if (selectedPreviewImage.startsWith('data:application/pdf') || selectedPreviewImage.toLowerCase().includes('.pdf')) {
-                      openPdfPreview(`
-                        <html>
-                          <head><title>พิมพ์เอกสารแนบ PDF</title></head>
-                          <body style="margin:0;padding:0;background:#fff;">
-                            <iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe>
-                          </body>
-                        </html>
-                      `, 'พิมพ์หลักฐานแนบ (PDF)');
-                    } else {
-                      openPdfPreview(`
-                        <html>
-                          <head>
-                            <title>พิมพ์หลักฐานแนบ</title>
-                            <style>
-                              body { margin: 0; padding: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; background: #fff; }
-                              img { max-width: 100%; max-height: 85vh; border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
-                              .header { margin-bottom: 15px; text-align: center; }
-                              h3 { margin: 0; font-size: 18px; color: #1e293b; }
-                              p { margin: 4px 0 0 0; font-size: 12px; color: #64748b; }
-                            </style>
-                          </head>
-                          <body>
-                            <div class="header">
-                              <h3>หลักฐานประกอบการเบิกจ่าย - เอกสารเลขที่: ${request.id}</h3>
-                              <p>หัวข้อ: ${request.title} | ยอดเงิน: ฿${(request.amount || 0).toLocaleString()} | วันที่: ${request.date}</p>
-                            </div>
-                            <img src="${safeUrl}" alt="หลักฐานแนบ" />
-                          </body>
-                        </html>
-                      `, `หลักฐานแนบ-${request.id}`);
-                    }
+                    const evidenceList = getRealReceiptImages(request);
+                    const idx = evidenceList.indexOf(selectedPreviewImage);
+                    const isPdf = selectedPreviewImage.startsWith('data:application/pdf') || selectedPreviewImage.toLowerCase().includes('.pdf');
+                    openPdfPreview({
+                      title: `หลักฐานแนบ - ${request.id}`,
+                      fileUrl: selectedPreviewImage,
+                      fileType: isPdf ? 'pdf' : 'image',
+                      items: evidenceList.map((u, i) => ({
+                        url: u,
+                        title: `${request.title} - เอกสารแนบ #${i + 1}`,
+                        type: (u.toLowerCase().includes('.pdf') || u.startsWith('data:application/pdf')) ? 'pdf' : 'image',
+                        name: `เอกสารแนบ #${i + 1}`
+                      })),
+                      initialIndex: idx >= 0 ? idx : 0
+                    });
                   }}
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                   title="พิมพ์หลักฐานแนบ"
@@ -1366,28 +1378,27 @@ export default function RequestDetailModal({ request, onClose, onAddComment, cur
                   type="button"
                   onClick={() => {
                     const safeUrl = getSafePreviewUrl(selectedPreviewImage);
-                    let win: Window | null = null;
-                    try {
-                      win = window.open(safeUrl, '_blank');
-                    } catch (e) {
-                      console.warn('window.open blocked:', e);
-                    }
-                    if (!win) {
-                      openPdfPreview(`
-                        <html>
-                          <head><title>หลักฐานแนบ - ${request.id}</title></head>
-                          <body style="margin:0;padding:0;background:#0f172a;display:flex;justify-content:center;align-items:center;">
-                            <iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe>
-                          </body>
-                        </html>
-                      `, `หลักฐานแนบ-${request.id}`);
-                    }
+                    const isPdf = selectedPreviewImage.startsWith('data:application/pdf') || selectedPreviewImage.toLowerCase().includes('.pdf');
+                    const evidenceList = getRealReceiptImages(request);
+                    const idx = evidenceList.indexOf(selectedPreviewImage);
+                    openPdfPreview({
+                      title: `หลักฐานแนบ - ${request.id}`,
+                      fileUrl: safeUrl,
+                      fileType: isPdf ? 'pdf' : 'image',
+                      items: evidenceList.map((u, i) => ({
+                        url: u,
+                        title: `${request.title} - เอกสารแนบ #${i + 1}`,
+                        type: (u.toLowerCase().includes('.pdf') || u.startsWith('data:application/pdf')) ? 'pdf' : 'image',
+                        name: `เอกสารแนบ #${i + 1}`
+                      })),
+                      initialIndex: idx >= 0 ? idx : 0
+                    });
                   }}
                   className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                   title="เปิดในแท็บใหม่"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
-                  <span>เปิดหน้าใหม่</span>
+                  <span>เปิดเต็มจอ</span>
                 </button>
 
                 <a

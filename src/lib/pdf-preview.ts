@@ -1,12 +1,37 @@
-type PdfContent = {
-  html: string;
-  title: string;
+export type PdfPreviewItem = {
+  url?: string;
+  html?: string;
+  title?: string;
+  type?: 'pdf' | 'image' | 'html';
+  name?: string;
+};
+
+export type PdfContent = {
+  html?: string;
+  title?: string;
+  fileUrl?: string;
+  fileType?: 'pdf' | 'image' | 'html';
+  items?: PdfPreviewItem[];
+  attachments?: (string | PdfPreviewItem)[];
+  initialIndex?: number;
 };
 
 let listeners: ((content: PdfContent | null) => void)[] = [];
 
-export function openPdfPreview(html: string, title: string = 'Document Preview') {
-  listeners.forEach(l => l({ html, title }));
+export function openPdfPreview(
+  htmlOrOptions: string | PdfContent,
+  title: string = 'Document Preview'
+) {
+  let payload: PdfContent;
+  if (typeof htmlOrOptions === 'string') {
+    payload = { html: htmlOrOptions, title };
+  } else {
+    payload = {
+      title: htmlOrOptions.title || title,
+      ...htmlOrOptions
+    };
+  }
+  listeners.forEach(l => l(payload));
 }
 
 export function closePdfPreview() {
@@ -19,3 +44,4 @@ export function subscribePdfPreview(listener: (content: PdfContent | null) => vo
     listeners = listeners.filter(l => l !== listener);
   };
 }
+

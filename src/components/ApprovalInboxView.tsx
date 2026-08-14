@@ -744,39 +744,12 @@ export default function ApprovalInboxView({
                   type="button"
                   onClick={() => {
                     const imgUrl = selectedImage || '';
-                    const safeUrl = getSafePreviewUrl(imgUrl);
-                    if (imgUrl.startsWith('data:application/pdf') || imgUrl.toLowerCase().includes('.pdf')) {
-                      openPdfPreview(`
-                        <html>
-                          <head><title>พิมพ์เอกสารแนบ PDF</title></head>
-                          <body style="margin:0;padding:0;background:#fff;">
-                            <iframe src="${safeUrl}" style="width:100vw;height:100vh;border:none;"></iframe>
-                          </body>
-                        </html>
-                      `, 'พิมพ์หลักฐานแนบ (PDF)');
-                    } else {
-                      openPdfPreview(`
-                        <html>
-                          <head>
-                            <title>พิมพ์หลักฐานแนบ</title>
-                            <style>
-                              body { margin: 0; padding: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; background: #fff; }
-                              img { max-width: 100%; max-height: 85vh; border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
-                              .header { margin-bottom: 15px; text-align: center; }
-                              h3 { margin: 0; font-size: 18px; color: #1e293b; }
-                              p { margin: 4px 0 0 0; font-size: 12px; color: #64748b; }
-                            </style>
-                          </head>
-                          <body>
-                            <div class="header">
-                              <h3>หลักฐานประกอบการพิจารณาอนุมัติ</h3>
-                              <p>วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH')}</p>
-                            </div>
-                            <img src="${safeUrl}" alt="หลักฐานแนบ" />
-                          </body>
-                        </html>
-                      `, 'หลักฐานแนบ-พิจารณาอนุมัติ');
-                    }
+                    openPdfPreview({
+                      html: '',
+                      title: 'หลักฐานประกอบการพิจารณาอนุมัติ',
+                      fileUrl: imgUrl,
+                      fileType: (imgUrl.startsWith('data:application/pdf') || imgUrl.toLowerCase().includes('.pdf')) ? 'pdf' : 'image'
+                    });
                   }}
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                   title="พิมพ์หลักฐานแนบ"

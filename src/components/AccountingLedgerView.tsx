@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { openPdfPreview } from '../lib/pdf-preview';
+import { downloadOriginalFile } from '../utils/pdfGenerator';
 import { 
   BookOpen, 
   Receipt, 
@@ -2003,8 +2004,21 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
                             {/* Full screen button */}
                             <button
                               type="button"
-                              onClick={() => (typeof activeDoc.url === 'string' && activeDoc.url.startsWith('http') ? window.open(activeDoc.url, '_blank') : null)}
-                              className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm"
+                              onClick={() => {
+                                openPdfPreview({
+                                  html: '',
+                                  title: activeDoc.name,
+                                  fileUrl: activeDoc.url,
+                                  items: attachments.map(a => ({
+                                    url: a.url,
+                                    title: a.name,
+                                    type: (a.url.toLowerCase().includes('.pdf') || a.url.startsWith('data:application/pdf')) ? 'pdf' : 'image',
+                                    name: a.name
+                                  })),
+                                  initialIndex: activeAttachmentIdx
+                                });
+                              }}
+                              className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm cursor-pointer"
                               title="เปิดดูเต็มหน้าจอ"
                             >
                               <ZoomIn className="h-3.5 w-3.5" />
@@ -2015,14 +2029,9 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
                             <button
                               type="button"
                               onClick={() => {
-                                const link = document.createElement('a');
-                                link.href = activeDoc.url;
-                                link.download = activeDoc.name || 'document';
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
+                                downloadOriginalFile(activeDoc.url, activeDoc.name || 'document');
                               }}
-                              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
+                              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
                               title="ดาวน์โหลดไฟล์เอกสาร"
                             >
                               <Download className="h-3.5 w-3.5" />
@@ -2033,51 +2042,20 @@ export default function AccountingLedgerView({ currentUser, onRefreshData }: Acc
                             <button
                               type="button"
                               onClick={() => {
-                                const printWindow: any = {
-      document: {
-        open: () => { printWindow._html = ''; },
-        write: (html: string) => { printWindow._html = (printWindow._html || '') + html; },
-        close: () => { openPdfPreview(printWindow._html, 'เอกสาร (PDF Preview)'); }
-      },
-      print: () => {},
-      close: () => {}
-    };
-                                if (printWindow) {
-                                  if (isPdf) {
-                                    printWindow.document.write(`
-                                      <html>
-                                        <head>
-                                          <title>${activeDoc.name}</title>
-                                        </head>
-                                        <body style="margin:0;padding:0;">
-                                          <embed src="${activeDoc.url}" type="application/pdf" style="width:100%;height:100vh;border:none;" />
-                                        </body>
-                                      </html>
-                                    `);
-                                  } else {
-                                    printWindow.document.write(`
-                                      <html>
-                                        <head>
-                                          <title>${activeDoc.name}</title>
-                                          <style>
-                                            body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: white; }
-                                            img { max-width: 100%; max-height: 100vh; object-fit: contain; }
-                                            @media print {
-                                              body { background: white; }
-                                              img { max-height: 100%; max-width: 100%; }
-                                            }
-                                          </style>
-                                        </head>
-                                        <body>
-                                          <img src="${activeDoc.url}" onload="window.print();window.close();" />
-                                        </body>
-                                      </html>
-                                    `);
-                                  }
-                                  printWindow.document.close();
-                                }
+                                openPdfPreview({
+                                  html: '',
+                                  title: activeDoc.name,
+                                  fileUrl: activeDoc.url,
+                                  items: attachments.map(a => ({
+                                    url: a.url,
+                                    title: a.name,
+                                    type: (a.url.toLowerCase().includes('.pdf') || a.url.startsWith('data:application/pdf')) ? 'pdf' : 'image',
+                                    name: a.name
+                                  })),
+                                  initialIndex: activeAttachmentIdx
+                                });
                               }}
-                              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
+                              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
                               title="สั่งพิมพ์หลักฐานนี้"
                             >
                               <Printer className="h-3.5 w-3.5" />

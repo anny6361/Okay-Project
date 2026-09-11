@@ -1,4 +1,4 @@
-import { collection, onSnapshot, doc, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export const DB_CACHE: Record<string, any> = {};
@@ -73,6 +73,15 @@ async function commitFirestoreWrites(writes: FirestoreWrite[]) {
       batch.set(ref, data, { merge: true });
     });
 
+    await batch.commit();
+  }
+}
+
+async function deleteFirestoreDocuments(refs: any[]) {
+  for (let start = 0; start < refs.length; start += FIRESTORE_BATCH_LIMIT) {
+    const batch = writeBatch(db);
+    const chunk = refs.slice(start, start + FIRESTORE_BATCH_LIMIT);
+    chunk.forEach(ref => batch.delete(ref));
     await batch.commit();
   }
 }
@@ -176,6 +185,10 @@ export function sanitizeForFirestore<T>(data: T): T {
 }
 
 export async function saveToFirestore(localKey: string, data: any) {
+  const previousRequests = localKey === 'okey_requests' && Array.isArray(DB_CACHE[localKey])
+    ? DB_CACHE[localKey]
+    : [];
+
   DB_CACHE[localKey] = data;
 
   try {
@@ -188,6 +201,26 @@ export async function saveToFirestore(localKey: string, data: any) {
 
   try {
     if (localKey === 'okey_requests') {
+      const currentIds = new Set((data || []).map((req: any) => req?.id).filter(Boolean));
+      const deletedRefs: any[] = [];
+
+      // Remove requests that existed in the last local cache but were explicitly deleted.
+      // We use the previous cache rather than querying Firestore, so we never delete a
+      // record that may have been created by another client but has not reached this tab.
+      previousRequests.forEach((req: any) => {
+        if (!req?.id || currentIds.has(req.id)) return;
+        const targetColl = req.expense_type === 'advance'
+          ? 'advanceRequests'
+          : req.expense_type === 'clearing'
+            ? 'advanceClearings'
+            : 'expenseRequests';
+        deletedRefs.push(doc(db, targetColl, req.id));
+      });
+
+      if (deletedRefs.length > 0) {
+        await deleteFirestoreDocuments(deletedRefs);
+      }
+
       for (const req of data || []) {
         if (!req?.id) continue;
         const targetColl = req.expense_type === 'advance'

@@ -34,18 +34,15 @@ Every persistent business record should have:
 
 ## Parent-child references
 
-Business documents must reference their parent entity using IDs, not display names. For procurement this means:
+Business documents must reference the existing parent business record using its existing stable ID. Display names must not be used as joins.
 
-- `PROJECT_ID` is the primary context.
-- Budget and account codes are referenced by IDs/codes.
-- Vendor and employee references use stable IDs.
-- Display names are presentation values and must not be used as joins.
+Do not introduce a replacement project schema, project allocation table, or additional budget/account-code structure merely to support a new document screen.
 
 ## Draft vs issued
 
-Draft records resolve current master data when rendered.
+Draft records may resolve current master data when rendered.
 
-Once a document is issued/finalized, values needed to reproduce the issued document must be snapshotted into the issued record. This prevents later vendor/project/master-data edits from changing historical documents.
+Once a document is issued/finalized, values needed to reproduce the issued document should be snapshotted into the issued record. This prevents later master-data edits from changing historical documents.
 
 ## Persistence boundary
 

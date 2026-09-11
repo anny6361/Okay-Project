@@ -1,4 +1,4 @@
-import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export const DB_CACHE: Record<string, any> = {};
@@ -37,27 +37,21 @@ const COLLECTION_MAPPING = {
   'okey_db_replacement_policy': 'systemSettings'
 } as const;
 
-// Keep the existing data model, but tolerate legacy field names already present in Firestore.
 function departmentId(d: any): string | undefined {
   return d?.department_id || d?.id;
 }
-
 function departmentName(d: any): string {
   return d?.department_name || d?.name || d?.department || '';
 }
-
 function departmentBudget(d: any): number {
   return Number(d?.budget ?? d?.budgetLimit ?? d?.allocated ?? 0) || 0;
 }
-
 function departmentSpent(d: any): number {
   return Number(d?.budgetSpent ?? d?.spent ?? 0) || 0;
 }
-
 function departmentPending(d: any): number {
   return Number(d?.budgetPending ?? d?.pending ?? 0) || 0;
 }
-
 function requestDate(r: any): number {
   const value = r?.date || r?.created_at || r?.createdAt;
   const time = value ? new Date(value).getTime() : 0;
@@ -68,11 +62,9 @@ async function commitFirestoreWrites(writes: FirestoreWrite[]) {
   for (let start = 0; start < writes.length; start += FIRESTORE_BATCH_LIMIT) {
     const batch = writeBatch(db);
     const chunk = writes.slice(start, start + FIRESTORE_BATCH_LIMIT);
-
     chunk.forEach(({ ref, data }) => {
       batch.set(ref, data, { merge: true });
     });
-
     await batch.commit();
   }
 }
@@ -204,9 +196,6 @@ export async function saveToFirestore(localKey: string, data: any) {
       const currentIds = new Set((data || []).map((req: any) => req?.id).filter(Boolean));
       const deletedRefs: any[] = [];
 
-      // Remove requests that existed in the last local cache but were explicitly deleted.
-      // We use the previous cache rather than querying Firestore, so we never delete a
-      // record that may have been created by another client but has not reached this tab.
       previousRequests.forEach((req: any) => {
         if (!req?.id || currentIds.has(req.id)) return;
         const targetColl = req.expense_type === 'advance'
@@ -221,6 +210,9 @@ export async function saveToFirestore(localKey: string, data: any) {
         await deleteFirestoreDocuments(deletedRefs);
       }
 
+      // Save the complete request set in Firestore batches instead of one network
+      // request per record. This reduces partial-save failures and UI stalls.
+      const requestWrites: FirestoreWrite[] = [];
       for (const req of data || []) {
         if (!req?.id) continue;
         const targetColl = req.expense_type === 'advance'
@@ -228,12 +220,14 @@ export async function saveToFirestore(localKey: string, data: any) {
           : req.expense_type === 'clearing'
             ? 'advanceClearings'
             : 'expenseRequests';
-        try {
-          const cleanReq = sanitizeForFirestore(req);
-          await setDoc(doc(db, targetColl, req.id), cleanReq, { merge: true });
-        } catch (docErr) {
-          console.error(`Failed to save individual request ${req.id} to Firestore:`, docErr);
-        }
+        requestWrites.push({
+          ref: doc(db, targetColl, req.id),
+          data: sanitizeForFirestore(req)
+        });
+      }
+
+      if (requestWrites.length > 0) {
+        await commitFirestoreWrites(requestWrites);
       }
       return;
     }

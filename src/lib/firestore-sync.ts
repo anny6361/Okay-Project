@@ -1,4 +1,4 @@
-import { collection, onSnapshot, doc, setDoc, writeBatch, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export const DB_CACHE: Record<string, any> = {};
@@ -13,8 +13,8 @@ export function setGlobalRenderTrigger(trigger: () => void) {
 const COLLECTION_MAPPING = {
   'okey_db_users': 'users',
   'okey_db_departments': 'departments',
-  'okey_requests': 'requests_combined', // We'll split this later
-  'okey_budgets': 'departments', // budgets map to departments collection in full-stack
+  'okey_requests': 'requests_combined',
+  'okey_budgets': 'departments',
   'okey_db_company_data': 'companySettings',
   'okey_db_categories_master': 'masterData',
   'okey_db_expense_types': 'masterData',
@@ -29,97 +29,124 @@ const COLLECTION_MAPPING = {
   'okey_db_accounting_docs': 'reports',
   'okey_db_pdf_templates': 'systemSettings',
   'okey_db_replacement_policy': 'systemSettings'
-};
+} as const;
+
+// Keep the existing data model, but tolerate legacy field names already present in Firestore.
+function departmentId(d: any): string | undefined {
+  return d?.department_id || d?.id;
+}
+
+function departmentName(d: any): string {
+  return d?.department_name || d?.name || d?.department || '';
+}
+
+function departmentBudget(d: any): number {
+  return Number(d?.budget ?? d?.budgetLimit ?? d?.allocated ?? 0) || 0;
+}
+
+function departmentSpent(d: any): number {
+  return Number(d?.budgetSpent ?? d?.spent ?? 0) || 0;
+}
+
+function departmentPending(d: any): number {
+  return Number(d?.budgetPending ?? d?.pending ?? 0) || 0;
+}
+
+function requestDate(r: any): number {
+  const value = r?.date || r?.created_at || r?.createdAt;
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
 
 export function setupFirestoreSync() {
   if (isInitialized) return;
   isInitialized = true;
 
-  // Sync Users
   onSnapshot(collection(db, 'users'), (snap) => {
     DB_CACHE['okey_db_users'] = snap.docs.map(d => d.data());
     globalRenderTrigger();
-  });
+  }, (error) => console.error('Firestore users sync error:', error));
 
-  // Sync Departments
   onSnapshot(collection(db, 'departments'), (snap) => {
-    DB_CACHE['okey_db_departments'] = snap.docs.map(d => d.data());
-    DB_CACHE['okey_budgets'] = snap.docs.map(d => ({
-      department: d.data().name,
-      limit: d.data().budgetLimit || 0,
-      spent: d.data().budgetSpent || 0,
-      pending: d.data().budgetPending || 0
+    const departments = snap.docs.map(d => ({
+      ...d.data(),
+      id: d.id,
+      department_id: d.data().department_id || d.id
+    }));
+    DB_CACHE['okey_db_departments'] = departments;
+    DB_CACHE['okey_budgets'] = departments.map(d => ({
+      department: departmentName(d),
+      allocated: departmentBudget(d),
+      spent: departmentSpent(d),
+      pending: departmentPending(d),
+      color: d.color || ''
     }));
     globalRenderTrigger();
-  });
+  }, (error) => console.error('Firestore departments sync error:', error));
 
-  // Sync Requests (Combined from 3 collections as requested)
   const syncRequests = () => {
     const combined = [
       ...(DB_CACHE['_exp'] || []),
       ...(DB_CACHE['_adv'] || []),
       ...(DB_CACHE['_clr'] || [])
     ];
-    DB_CACHE['okey_requests'] = combined.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    DB_CACHE['okey_requests'] = combined.sort((a, b) => requestDate(b) - requestDate(a));
     globalRenderTrigger();
   };
 
   onSnapshot(collection(db, 'expenseRequests'), (snap) => {
-    DB_CACHE['_exp'] = snap.docs.map(d => d.data());
+    DB_CACHE['_exp'] = snap.docs.map(d => ({ ...d.data(), id: d.data().id || d.id }));
     syncRequests();
-  });
+  }, (error) => console.error('Firestore expenseRequests sync error:', error));
+
   onSnapshot(collection(db, 'advanceRequests'), (snap) => {
-    DB_CACHE['_adv'] = snap.docs.map(d => d.data());
+    DB_CACHE['_adv'] = snap.docs.map(d => ({ ...d.data(), id: d.data().id || d.id }));
     syncRequests();
-  });
+  }, (error) => console.error('Firestore advanceRequests sync error:', error));
+
   onSnapshot(collection(db, 'advanceClearings'), (snap) => {
-    DB_CACHE['_clr'] = snap.docs.map(d => d.data());
+    DB_CACHE['_clr'] = snap.docs.map(d => ({ ...d.data(), id: d.data().id || d.id }));
     syncRequests();
-  });
+  }, (error) => console.error('Firestore advanceClearings sync error:', error));
 
-  // Sync Audit Logs
   onSnapshot(collection(db, 'auditLogs'), (snap) => {
-    DB_CACHE['okey_db_enterprise_audit_logs'] = snap.docs.map(d => d.data());
+    DB_CACHE['okey_db_enterprise_audit_logs'] = snap.docs.map(d => ({
+      ...d.data(),
+      id: d.data().id || d.data().log_id || d.id
+    }));
     globalRenderTrigger();
-  });
+  }, (error) => console.error('Firestore auditLogs sync error:', error));
 
-  // Sync Master Data
   onSnapshot(collection(db, 'masterData'), (snap) => {
-    snap.docs.forEach(doc => {
-      if (doc.id === 'categories') DB_CACHE['okey_db_categories_master'] = doc.data().items || [];
-      if (doc.id === 'expenseTypes') DB_CACHE['okey_db_expense_types'] = doc.data().items || [];
-      if (doc.id === 'approvalLevels') DB_CACHE['okey_db_approval_levels'] = doc.data().items || [];
-      if (doc.id === 'roles') DB_CACHE['okey_db_roles_master'] = doc.data().items || [];
+    snap.docs.forEach(d => {
+      if (d.id === 'categories') DB_CACHE['okey_db_categories_master'] = d.data().items || [];
+      if (d.id === 'expenseTypes') DB_CACHE['okey_db_expense_types'] = d.data().items || [];
+      if (d.id === 'approvalLevels') DB_CACHE['okey_db_approval_levels'] = d.data().items || [];
+      if (d.id === 'roles') DB_CACHE['okey_db_roles_master'] = d.data().items || [];
     });
     globalRenderTrigger();
-  });
+  }, (error) => console.error('Firestore masterData sync error:', error));
 
-  // Sync Company Settings
   onSnapshot(collection(db, 'companySettings'), (snap) => {
-    snap.docs.forEach(doc => {
-      if (doc.id === 'main') DB_CACHE['okey_db_company_data'] = doc.data() || {};
-      if (doc.id === 'rules') DB_CACHE['okey_db_rules'] = doc.data().items || [];
+    snap.docs.forEach(d => {
+      if (d.id === 'main') DB_CACHE['okey_db_company_data'] = d.data() || {};
+      if (d.id === 'rules') DB_CACHE['okey_db_rules'] = d.data().items || [];
     });
     globalRenderTrigger();
-  });
+  }, (error) => console.error('Firestore companySettings sync error:', error));
 
-  // Notifications
   onSnapshot(collection(db, 'notifications'), (snap) => {
-    DB_CACHE['notifications'] = snap.docs.map(d => d.data());
+    DB_CACHE['notifications'] = snap.docs.map(d => ({ ...d.data(), id: d.data().id || d.id }));
     globalRenderTrigger();
-  });
+  }, (error) => console.error('Firestore notifications sync error:', error));
 }
 
 export function sanitizeForFirestore<T>(data: T): T {
-  if (data === null || data === undefined) {
-    return null as any;
-  }
-  if (Array.isArray(data)) {
-    return data.map(item => sanitizeForFirestore(item)) as any;
-  }
+  if (data === null || data === undefined) return null as any;
+  if (Array.isArray(data)) return data.map(item => sanitizeForFirestore(item)) as any;
   if (typeof data === 'object' && !(data instanceof Date)) {
     const cleaned: Record<string, any> = {};
-    for (const [key, value] of Object.entries(data)) {
+    for (const [key, value] of Object.entries(data as any)) {
       if (value !== undefined && typeof value !== 'function') {
         cleaned[key] = sanitizeForFirestore(value);
       }
@@ -130,9 +157,8 @@ export function sanitizeForFirestore<T>(data: T): T {
 }
 
 export async function saveToFirestore(localKey: string, data: any) {
-  DB_CACHE[localKey] = data; // Optimistic memory cache
-  
-  // Always update localStorage as local persistence fallback
+  DB_CACHE[localKey] = data;
+
   try {
     localStorage.setItem(localKey, JSON.stringify(data));
   } catch (e) {
@@ -143,10 +169,13 @@ export async function saveToFirestore(localKey: string, data: any) {
 
   try {
     if (localKey === 'okey_requests') {
-      // Save requests individually to handle large base64 image receipts without hitting batch size limits
-      for (const req of data) {
-        if (!req.id) continue;
-        const targetColl = req.expense_type === 'advance' ? 'advanceRequests' : req.expense_type === 'clearing' ? 'advanceClearings' : 'expenseRequests';
+      for (const req of data || []) {
+        if (!req?.id) continue;
+        const targetColl = req.expense_type === 'advance'
+          ? 'advanceRequests'
+          : req.expense_type === 'clearing'
+            ? 'advanceClearings'
+            : 'expenseRequests';
         try {
           const cleanReq = sanitizeForFirestore(req);
           await setDoc(doc(db, targetColl, req.id), cleanReq, { merge: true });
@@ -158,47 +187,38 @@ export async function saveToFirestore(localKey: string, data: any) {
     }
 
     const batch = writeBatch(db);
-    
+
     if (localKey === 'okey_db_users') {
-      data.forEach((u: any) => {
-        if (u.user_id) {
-          const cleanUser = sanitizeForFirestore(u);
-          batch.set(doc(db, 'users', u.user_id), cleanUser, { merge: true });
-          batch.set(doc(db, 'employees', u.user_id), cleanUser, { merge: true });
-        }
+      (data || []).forEach((u: any) => {
+        if (!u?.user_id) return;
+        const cleanUser = sanitizeForFirestore(u);
+        batch.set(doc(db, 'users', u.user_id), cleanUser, { merge: true });
+        batch.set(doc(db, 'employees', u.user_id), cleanUser, { merge: true });
       });
-    } 
-    else if (localKey === 'okey_db_departments') {
-      data.forEach((d: any) => {
-        if (d.id) {
-          const cleanDept = sanitizeForFirestore(d);
-          batch.set(doc(db, 'departments', d.id), cleanDept, { merge: true });
-        }
+    } else if (localKey === 'okey_db_departments') {
+      (data || []).forEach((d: any) => {
+        const id = departmentId(d);
+        if (!id) return;
+        const cleanDept = sanitizeForFirestore({ ...d, department_id: d.department_id || id });
+        batch.set(doc(db, 'departments', id), cleanDept, { merge: true });
       });
-    }
-    else if (localKey === 'okey_db_enterprise_audit_logs') {
-      data.forEach((log: any) => {
-        const id = log.id || Math.random().toString(36).substring(7);
-        const cleanLog = sanitizeForFirestore({ ...log, id });
+    } else if (localKey === 'okey_db_enterprise_audit_logs') {
+      (data || []).forEach((log: any) => {
+        const id = log?.id || log?.log_id || Math.random().toString(36).substring(2, 11);
+        const cleanLog = sanitizeForFirestore({ ...log, id, log_id: log?.log_id || id });
         batch.set(doc(db, 'auditLogs', id), cleanLog, { merge: true });
       });
-    }
-    else if (localKey === 'okey_db_company_data') {
+    } else if (localKey === 'okey_db_company_data') {
       batch.set(doc(db, 'companySettings', 'main'), sanitizeForFirestore(data), { merge: true });
-    }
-    else if (localKey === 'okey_db_categories_master') {
+    } else if (localKey === 'okey_db_categories_master') {
       batch.set(doc(db, 'masterData', 'categories'), sanitizeForFirestore({ items: data }), { merge: true });
-    }
-    else if (localKey === 'okey_db_expense_types') {
+    } else if (localKey === 'okey_db_expense_types') {
       batch.set(doc(db, 'masterData', 'expenseTypes'), sanitizeForFirestore({ items: data }), { merge: true });
-    }
-    else if (localKey === 'okey_db_approval_levels') {
+    } else if (localKey === 'okey_db_approval_levels') {
       batch.set(doc(db, 'masterData', 'approvalLevels'), sanitizeForFirestore({ items: data }), { merge: true });
-    }
-    else if (localKey === 'okey_db_roles_master') {
+    } else if (localKey === 'okey_db_roles_master') {
       batch.set(doc(db, 'masterData', 'roles'), sanitizeForFirestore({ items: data }), { merge: true });
-    }
-    else if (localKey === 'okey_db_rules') {
+    } else if (localKey === 'okey_db_rules') {
       batch.set(doc(db, 'companySettings', 'rules'), sanitizeForFirestore({ items: data }), { merge: true });
     }
 
@@ -210,15 +230,10 @@ export async function saveToFirestore(localKey: string, data: any) {
 
 export function getFromCache(localKey: string, defaultValue: any = null) {
   if (DB_CACHE[localKey] !== undefined && DB_CACHE[localKey] !== null) {
-    if (Array.isArray(DB_CACHE[localKey]) && DB_CACHE[localKey].length > 0) {
-      return DB_CACHE[localKey];
-    }
-    if (!Array.isArray(DB_CACHE[localKey]) && Object.keys(DB_CACHE[localKey]).length > 0) {
-      return DB_CACHE[localKey];
-    }
+    if (Array.isArray(DB_CACHE[localKey]) && DB_CACHE[localKey].length > 0) return DB_CACHE[localKey];
+    if (!Array.isArray(DB_CACHE[localKey]) && Object.keys(DB_CACHE[localKey]).length > 0) return DB_CACHE[localKey];
   }
 
-  // Fallback to localStorage if available
   try {
     const local = localStorage.getItem(localKey);
     if (local) {

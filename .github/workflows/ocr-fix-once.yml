@@ -1,0 +1,76 @@
+name: OCR Fix Once
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-ocr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply targeted OCR fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/components/MyRequestsView.tsx')
+          s = p.read_text(encoding='utf-8')
+          old = '''    let errMessage = `Server returned ${response.status}`;
+        try {
+          const errJson = await response.json();
+          if (errJson && errJson.error) {
+            errMessage = errJson.error;
+          }
+        } catch {
+          const text = await response.text();
+          if (text) errMessage = text;
+        }
+        throw new Error(errMessage);'''
+          new = '''    let errMessage = `Server returned ${response.status}`;
+        try {
+          const responseBody = await response.text();
+
+          if (responseBody) {
+            try {
+              const errJson = JSON.parse(responseBody);
+
+              if (errJson && errJson.error) {
+                errMessage = String(errJson.error);
+              } else {
+                errMessage = responseBody;
+              }
+            } catch {
+              errMessage = responseBody;
+            }
+          }
+        } catch {
+          // Keep HTTP status message
+        }
+        throw new Error(errMessage);'''
+          if old not in s:
+              raise SystemExit('Expected OCR block not found; no source change made.')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          print('OCR fix applied.')
+          PY
+
+      - name: Typecheck
+        run: bun install --frozen-lockfile && bun run lint
+
+      - name: Build
+        run: bun run build
+
+      - name: Commit source fix and remove one-time workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/MyRequestsView.tsx
+          git rm .github/workflows/ocr-fix-once.yml
+          git commit -m "Fix OCR response body handling"
+          git push origin HEAD:main

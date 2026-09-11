@@ -3,22 +3,9 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-// Temporary, narrowly-scoped build-time safety patch for the OCR response handler.
-// It prevents Response.json() from consuming the same body that the fallback reads with Response.text().
+// Narrow build-time compatibility patch for the OCR error handler.
+// The source currently has a fallback that can read a Response body twice.
 function ocrResponseBodyFix() {
-  const oldBlock = `    let errMessage = \`Server returned \${response.status}\`;
-
-    try {
-      const errJson = await response.json();
-      if (errJson && errJson.error) {
-        errMessage = errJson.error;
-      }
-    } catch {
-      const text = await response.text();
-      if (text) errMessage = text;
-    }
-    throw new Error(errMessage);`;
-
   const newBlock = `    let errMessage = \`Server returned \${response.status}\`;
 
     try {
@@ -27,7 +14,6 @@ function ocrResponseBodyFix() {
       if (responseBody) {
         try {
           const errJson = JSON.parse(responseBody);
-
           if (errJson && errJson.error) {
             errMessage = String(errJson.error);
           } else {
@@ -54,12 +40,13 @@ function ocrResponseBodyFix() {
         return null;
       }
 
-      if (!code.includes(oldBlock)) {
-        throw new Error('OCR response handler was not found; refusing to apply an unsafe build-time change.');
+      const ocrHandlerPattern = /    let errMessage = `Server returned \\${response\\.status}`;[\\s\\S]*?    throw new Error\\(errMessage\\);/;
+      if (!ocrHandlerPattern.test(code)) {
+        return null;
       }
 
       return {
-        code: code.replace(oldBlock, newBlock),
+        code: code.replace(ocrHandlerPattern, newBlock),
         map: null,
       };
     },

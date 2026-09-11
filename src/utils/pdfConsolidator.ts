@@ -64,7 +64,6 @@ export async function imageSourceToBytes(src: string): Promise<{ bytes: Uint8Arr
           throw new Error('Canvas 2D context unavailable');
         }
 
-        // Fill white background for transparency safety
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
@@ -96,7 +95,7 @@ export async function imageSourceToBytes(src: string): Promise<{ bytes: Uint8Arr
  */
 export async function renderHtmlToPdfBytes(rawHtml: string): Promise<Uint8Array> {
   let cleanHtml = rawHtml
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<script\b[^<]*(?:(?!<\/script>)[^<]*)*<\/script>/gi, '')
     .replace(/window\.close\(\);?/gi, '')
     .replace(/onload=\s*(['"])(.*?)\1|onload=\s*([^\s>]+)/gi, '');
 
@@ -106,7 +105,7 @@ export async function renderHtmlToPdfBytes(rawHtml: string): Promise<Uint8Array>
   container.style.position = 'fixed';
   container.style.left = '-9999px';
   container.style.top = '0';
-  container.style.width = '794px'; // 210mm at 96 DPI
+  container.style.width = '794px';
   container.style.backgroundColor = '#ffffff';
   container.style.color = '#000000';
   container.style.fontFamily = 'Sarabun, sans-serif';
@@ -142,7 +141,6 @@ export async function renderHtmlToPdfBytes(rawHtml: string): Promise<Uint8Array>
 
   document.body.appendChild(container);
 
-  // Wait for images inside HTML to load
   const imgs = container.querySelectorAll('img');
   await Promise.all(
     Array.from(imgs).map(
@@ -218,7 +216,6 @@ export async function generateConsolidatedPdf(
 ): Promise<Uint8Array> {
   const mergedDoc = await PDFDocument.create();
 
-  // Helper to determine type
   const isUrlPdf = (url: string) => {
     const lower = (url || '').toLowerCase();
     return lower.startsWith('data:application/pdf') || lower.startsWith('blob:application/pdf') || lower.includes('.pdf');
@@ -229,7 +226,6 @@ export async function generateConsolidatedPdf(
     return lower.startsWith('data:image/') || /\.(jpg|jpeg|png|webp|gif|svg|bmp)(\?.*)?$/i.test(lower);
   };
 
-  // 1. Process Main Document
   try {
     if (mainDoc.type === 'pdf' || (mainDoc.url && isUrlPdf(mainDoc.url))) {
       const pdfBytes = await fetchUrlAsBytes(mainDoc.url!);
@@ -239,24 +235,16 @@ export async function generateConsolidatedPdf(
     } else if (mainDoc.type === 'image' || (mainDoc.url && isUrlImage(mainDoc.url))) {
       const imgInfo = await imageSourceToBytes(mainDoc.url!);
       const embeddedImg = await mergedDoc.embedJpg(imgInfo.bytes);
-      const page = mergedDoc.addPage([595.28, 841.89]); // A4 portrait points
-      
+      const page = mergedDoc.addPage([595.28, 841.89]);
       const margin = 36;
       const availW = 595.28 - margin * 2;
       const availH = 841.89 - margin * 2;
-
       const scale = Math.min(availW / imgInfo.width, availH / imgInfo.height, 1);
       const drawW = imgInfo.width * scale;
       const drawH = imgInfo.height * scale;
       const posX = (595.28 - drawW) / 2;
       const posY = (841.89 - drawH) / 2;
-
-      page.drawImage(embeddedImg, {
-        x: posX,
-        y: posY,
-        width: drawW,
-        height: drawH
-      });
+      page.drawImage(embeddedImg, { x: posX, y: posY, width: drawW, height: drawH });
     } else if (mainDoc.html) {
       const mainPdfBytes = await renderHtmlToPdfBytes(mainDoc.html);
       const srcDoc = await PDFDocument.load(mainPdfBytes, { ignoreEncryption: true });
@@ -265,12 +253,9 @@ export async function generateConsolidatedPdf(
     }
   } catch (err) {
     console.error('Error rendering main document for consolidated PDF:', err);
-    // If main document failed, fall back to empty placeholder page so export doesn't die
-    const fallbackPage = mergedDoc.addPage([595.28, 841.89]);
-    // Draw placeholder
+    mergedDoc.addPage([595.28, 841.89]);
   }
 
-  // 2. Append all attachments sequentially
   for (let idx = 0; idx < attachments.length; idx++) {
     const item = attachments[idx];
     const sourceUrl = item.url || '';
@@ -285,25 +270,17 @@ export async function generateConsolidatedPdf(
       } else if (item.type === 'image' || isUrlImage(sourceUrl) || sourceUrl.startsWith('data:image/') || sourceUrl.startsWith('http') || sourceUrl.startsWith('blob:')) {
         const imgInfo = await imageSourceToBytes(sourceUrl);
         const embeddedImg = await mergedDoc.embedJpg(imgInfo.bytes);
-        const page = mergedDoc.addPage([595.28, 841.89]); // A4 portrait
-
+        const page = mergedDoc.addPage([595.28, 841.89]);
         const margin = 36;
         const headerH = 40;
         const availW = 595.28 - margin * 2;
         const availH = 841.89 - margin * 2 - headerH;
-
         const scale = Math.min(availW / imgInfo.width, availH / imgInfo.height, 1);
         const drawW = imgInfo.width * scale;
         const drawH = imgInfo.height * scale;
         const posX = (595.28 - drawW) / 2;
         const posY = margin + (availH - drawH) / 2;
-
-        page.drawImage(embeddedImg, {
-          x: posX,
-          y: posY,
-          width: drawW,
-          height: drawH
-        });
+        page.drawImage(embeddedImg, { x: posX, y: posY, width: drawW, height: drawH });
       } else if (item.html) {
         const htmlPdfBytes = await renderHtmlToPdfBytes(item.html);
         const attachDoc = await PDFDocument.load(htmlPdfBytes, { ignoreEncryption: true });
@@ -315,13 +292,11 @@ export async function generateConsolidatedPdf(
     }
   }
 
-  // If no pages were added at all, add a default page
   if (mergedDoc.getPageCount() === 0) {
     mergedDoc.addPage([595.28, 841.89]);
   }
 
-  const finalPdfBytes = await mergedDoc.save();
-  return finalPdfBytes;
+  return mergedDoc.save();
 }
 
 /**
@@ -335,7 +310,6 @@ export async function downloadConsolidatedPdfFile(
   const pdfBytes = await generateConsolidatedPdf(mainDoc, attachments, fileName);
   const blob = new Blob([pdfBytes], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
-
   const cleanName = fileName.toLowerCase().endsWith('.pdf') ? fileName : `${fileName}.pdf`;
   const a = document.createElement('a');
   a.href = url;
@@ -343,7 +317,6 @@ export async function downloadConsolidatedPdfFile(
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-
   setTimeout(() => URL.revokeObjectURL(url), 15000);
 }
 
@@ -354,10 +327,22 @@ export async function printConsolidatedDocument(
   mainDoc: { html?: string; url?: string; type?: 'pdf' | 'image' | 'html'; title?: string },
   attachments: AttachmentItem[] = []
 ): Promise<void> {
-  // Build composite printable HTML
   let fullPrintHtml = '';
 
-  const mainClean = mainDoc.html ? cleanCssText(mainDoc.html) : '';
+  let mainClean = mainDoc.html ? cleanCssText(mainDoc.html) : '';
+
+  // The main voucher already contains its real evidence gallery.
+  // Force that gallery to begin on page 2, while keeping the main voucher on page 1.
+  mainClean = mainClean
+    .replace(
+      '<div class="evidence-grid">',
+      '<div class="evidence-grid" style="page-break-before: always; break-before: page;">'
+    )
+    .replace(
+      '<div style="break-inside: avoid; text-align: center; margin-top: 20px;',
+      '<div style="page-break-before: always; break-before: page; break-inside: avoid; text-align: center; margin-top: 20px;'
+    );
+
   if (mainClean) {
     fullPrintHtml += `<div class="main-doc-print-section">${mainClean}</div>`;
   } else if (mainDoc.url) {
@@ -372,29 +357,34 @@ export async function printConsolidatedDocument(
     }
   }
 
-  // Add all attachments as print pages
-  attachments.forEach((att, idx) => {
-    const safeUrl = att.url ? getSafePreviewUrl(att.url) : '';
-    const title = att.title || att.name || `เอกสารหลักฐานแนบ #${idx + 1}`;
-    const isPdf = att.type === 'pdf' || (safeUrl && safeUrl.toLowerCase().includes('.pdf'));
+  // If the main document already embeds the same evidence gallery, do not append it again.
+  // This keeps the evidence section on page 2 instead of creating duplicate pages.
+  const mainContainsEmbeddedEvidence = /Receipt & Evidence|Receipt & Evidence Gallery|evidence-grid|receipt gallery item|A4 attachment preview/i.test(mainClean);
 
-    if (safeUrl && !isPdf) {
-      fullPrintHtml += `
-        <div class="attachment-print-page" style="page-break-before: always; break-before: page; text-align: center; padding: 20px;">
-          <div style="font-family: Sarabun, sans-serif; font-size: 13px; font-weight: bold; margin-bottom: 12px; color: #475569; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px;">
-            หลักฐานประกอบการเบิกจ่าย: ${title}
+  if (!mainContainsEmbeddedEvidence) {
+    attachments.forEach((att, idx) => {
+      const safeUrl = att.url ? getSafePreviewUrl(att.url) : '';
+      const title = att.title || att.name || `เอกสารหลักฐานแนบ #${idx + 1}`;
+      const isPdf = att.type === 'pdf' || (safeUrl && safeUrl.toLowerCase().includes('.pdf'));
+
+      if (safeUrl && !isPdf) {
+        fullPrintHtml += `
+          <div class="attachment-print-page" style="page-break-before: always; break-before: page; text-align: center; padding: 20px;">
+            <div style="font-family: Sarabun, sans-serif; font-size: 13px; font-weight: bold; margin-bottom: 12px; color: #475569; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px;">
+              หลักฐานประกอบการเบิกจ่าย: ${title}
+            </div>
+            <img src="${safeUrl}" style="max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 6px; border: 1px solid #cbd5e1;" />
           </div>
-          <img src="${safeUrl}" style="max-width: 100%; max-height: 85vh; object-fit: contain; border-radius: 6px; border: 1px solid #cbd5e1;" />
-        </div>
-      `;
-    } else if (att.html) {
-      fullPrintHtml += `
-        <div class="attachment-print-page" style="page-break-before: always; break-before: page; padding: 20px;">
-          ${cleanCssText(att.html)}
-        </div>
-      `;
-    }
-  });
+        `;
+      } else if (att.html) {
+        fullPrintHtml += `
+          <div class="attachment-print-page" style="page-break-before: always; break-before: page; padding: 20px;">
+            ${cleanCssText(att.html)}
+          </div>
+        `;
+      }
+    });
+  }
 
   const printDocumentHtml = `
     <!DOCTYPE html>
@@ -441,6 +431,11 @@ export async function printConsolidatedDocument(
               page-break-after: always !important;
               break-after: page !important;
             }
+            .evidence-grid,
+            [style*="break-before: page"] {
+              break-before: page !important;
+              page-break-before: always !important;
+            }
           }
         </style>
       </head>
@@ -450,7 +445,6 @@ export async function printConsolidatedDocument(
     </html>
   `;
 
-  // Hidden print iframe method for guaranteed Print Dialog execution
   let printIframe = document.getElementById('global-print-iframe') as HTMLIFrameElement;
   if (printIframe && printIframe.parentNode) {
     printIframe.parentNode.removeChild(printIframe);

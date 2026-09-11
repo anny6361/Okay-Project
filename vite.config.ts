@@ -3,9 +3,72 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+// Temporary, narrowly-scoped build-time safety patch for the OCR response handler.
+// It prevents Response.json() from consuming the same body that the fallback reads with Response.text().
+function ocrResponseBodyFix() {
+  const oldBlock = `    let errMessage = \`Server returned \${response.status}\`;
+
+    try {
+      const errJson = await response.json();
+      if (errJson && errJson.error) {
+        errMessage = errJson.error;
+      }
+    } catch {
+      const text = await response.text();
+      if (text) errMessage = text;
+    }
+    throw new Error(errMessage);`;
+
+  const newBlock = `    let errMessage = \`Server returned \${response.status}\`;
+
+    try {
+      const responseBody = await response.text();
+
+      if (responseBody) {
+        try {
+          const errJson = JSON.parse(responseBody);
+
+          if (errJson && errJson.error) {
+            errMessage = String(errJson.error);
+          } else {
+            errMessage = responseBody;
+          }
+        } catch {
+          errMessage = responseBody;
+        }
+      }
+    } catch {
+      // Keep HTTP status message
+    }
+    throw new Error(errMessage);`;
+
+  return {
+    name: 'ocr-response-body-fix',
+    enforce: 'pre' as const,
+    transform(code: string, id: string) {
+      if (!id.replace(/\\/g, '/').endsWith('/src/components/MyRequestsView.tsx')) {
+        return null;
+      }
+
+      if (code.includes(newBlock)) {
+        return null;
+      }
+
+      if (!code.includes(oldBlock)) {
+        throw new Error('OCR response handler was not found; refusing to apply an unsafe build-time change.');
+      }
+
+      return {
+        code: code.replace(oldBlock, newBlock),
+        map: null,
+      };
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [ocrResponseBodyFix(), react(), tailwindcss()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

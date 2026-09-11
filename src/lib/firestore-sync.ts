@@ -5,6 +5,12 @@ export const DB_CACHE: Record<string, any> = {};
 
 let isInitialized = false;
 let globalRenderTrigger: () => void = () => {};
+const FIRESTORE_BATCH_LIMIT = 450;
+
+type FirestoreWrite = {
+  ref: any;
+  data: any;
+};
 
 export function setGlobalRenderTrigger(trigger: () => void) {
   globalRenderTrigger = trigger;
@@ -56,6 +62,19 @@ function requestDate(r: any): number {
   const value = r?.date || r?.created_at || r?.createdAt;
   const time = value ? new Date(value).getTime() : 0;
   return Number.isFinite(time) ? time : 0;
+}
+
+async function commitFirestoreWrites(writes: FirestoreWrite[]) {
+  for (let start = 0; start < writes.length; start += FIRESTORE_BATCH_LIMIT) {
+    const batch = writeBatch(db);
+    const chunk = writes.slice(start, start + FIRESTORE_BATCH_LIMIT);
+
+    chunk.forEach(({ ref, data }) => {
+      batch.set(ref, data, { merge: true });
+    });
+
+    await batch.commit();
+  }
 }
 
 export function setupFirestoreSync() {
@@ -186,43 +205,48 @@ export async function saveToFirestore(localKey: string, data: any) {
       return;
     }
 
-    const batch = writeBatch(db);
+    const writes: FirestoreWrite[] = [];
+    const addWrite = (ref: any, value: any) => {
+      writes.push({ ref, data: value });
+    };
 
     if (localKey === 'okey_db_users') {
       (data || []).forEach((u: any) => {
         if (!u?.user_id) return;
         const cleanUser = sanitizeForFirestore(u);
-        batch.set(doc(db, 'users', u.user_id), cleanUser, { merge: true });
-        batch.set(doc(db, 'employees', u.user_id), cleanUser, { merge: true });
+        addWrite(doc(db, 'users', u.user_id), cleanUser);
+        addWrite(doc(db, 'employees', u.user_id), cleanUser);
       });
     } else if (localKey === 'okey_db_departments') {
       (data || []).forEach((d: any) => {
         const id = departmentId(d);
         if (!id) return;
         const cleanDept = sanitizeForFirestore({ ...d, department_id: d.department_id || id });
-        batch.set(doc(db, 'departments', id), cleanDept, { merge: true });
+        addWrite(doc(db, 'departments', id), cleanDept);
       });
     } else if (localKey === 'okey_db_enterprise_audit_logs') {
       (data || []).forEach((log: any) => {
         const id = log?.id || log?.log_id || Math.random().toString(36).substring(2, 11);
         const cleanLog = sanitizeForFirestore({ ...log, id, log_id: log?.log_id || id });
-        batch.set(doc(db, 'auditLogs', id), cleanLog, { merge: true });
+        addWrite(doc(db, 'auditLogs', id), cleanLog);
       });
     } else if (localKey === 'okey_db_company_data') {
-      batch.set(doc(db, 'companySettings', 'main'), sanitizeForFirestore(data), { merge: true });
+      addWrite(doc(db, 'companySettings', 'main'), sanitizeForFirestore(data));
     } else if (localKey === 'okey_db_categories_master') {
-      batch.set(doc(db, 'masterData', 'categories'), sanitizeForFirestore({ items: data }), { merge: true });
+      addWrite(doc(db, 'masterData', 'categories'), sanitizeForFirestore({ items: data }));
     } else if (localKey === 'okey_db_expense_types') {
-      batch.set(doc(db, 'masterData', 'expenseTypes'), sanitizeForFirestore({ items: data }), { merge: true });
+      addWrite(doc(db, 'masterData', 'expenseTypes'), sanitizeForFirestore({ items: data }));
     } else if (localKey === 'okey_db_approval_levels') {
-      batch.set(doc(db, 'masterData', 'approvalLevels'), sanitizeForFirestore({ items: data }), { merge: true });
+      addWrite(doc(db, 'masterData', 'approvalLevels'), sanitizeForFirestore({ items: data }));
     } else if (localKey === 'okey_db_roles_master') {
-      batch.set(doc(db, 'masterData', 'roles'), sanitizeForFirestore({ items: data }), { merge: true });
+      addWrite(doc(db, 'masterData', 'roles'), sanitizeForFirestore({ items: data }));
     } else if (localKey === 'okey_db_rules') {
-      batch.set(doc(db, 'companySettings', 'rules'), sanitizeForFirestore({ items: data }), { merge: true });
+      addWrite(doc(db, 'companySettings', 'rules'), sanitizeForFirestore({ items: data }));
     }
 
-    await batch.commit();
+    if (writes.length > 0) {
+      await commitFirestoreWrites(writes);
+    }
   } catch (error) {
     console.error(`Error saving ${localKey} to Firestore:`, error);
   }

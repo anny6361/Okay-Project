@@ -40,13 +40,15 @@ function ocrResponseBodyFix() {
         return null;
       }
 
-      const ocrHandlerPattern = /    let errMessage = `Server returned \\${response\\.status}`;[\\s\\S]*?    throw new Error\\(errMessage\\);/;
-      if (!ocrHandlerPattern.test(code)) {
+      // Match the complete OCR error handler without depending on its exact indentation.
+      const ocrHandlerPattern = /\s*let errMessage = `Server returned \$\{response\.status\}`;[\s\S]*?\s*throw new Error\(errMessage\);/;
+      const match = code.match(ocrHandlerPattern);
+      if (!match) {
         return null;
       }
 
       return {
-        code: code.replace(ocrHandlerPattern, newBlock),
+        code: code.replace(ocrHandlerPattern, `\n${newBlock}`),
         map: null,
       };
     },

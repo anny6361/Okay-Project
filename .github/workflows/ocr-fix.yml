@@ -1,0 +1,167 @@
+name: OCR safe repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ocr-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch OCR and VAT handling
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('src/components/MyRequestsView.tsx')
+          s = p.read_text(encoding='utf-8')
+
+          old_error = '''      if (!response.ok) {
+        let errMessage = `Server returned ${response.status}`;
+        try {
+          const errJson = await response.json();
+          if (errJson && errJson.error) {
+            errMessage = errJson.error;
+          }
+        } catch {
+          const text = await response.text();
+          if (text) errMessage = text;
+        }
+        throw new Error(errMessage);
+      }
+'''
+          new_error = '''      if (!response.ok) {
+        let errMessage = `Server returned ${response.status}`;
+        // Read the response body exactly once. Calling json() and then text()
+        // on the same Response consumes the body twice and causes:
+        // "Failed to execute 'text' on 'Response': body stream already read".
+        try {
+          const responseBody = await response.text();
+          if (responseBody) {
+            try {
+              const errJson = JSON.parse(responseBody);
+              if (errJson && errJson.error) {
+                errMessage = String(errJson.error);
+              } else {
+                errMessage = responseBody;
+              }
+            } catch {
+              errMessage = responseBody;
+            }
+          }
+        } catch {
+          // Keep the HTTP status message if the body itself cannot be read.
+        }
+        throw new Error(errMessage);
+      }
+'''
+          if old_error not in s:
+              raise SystemExit('OCR error handler block not found; refusing unsafe overwrite')
+          s = s.replace(old_error, new_error, 1)
+
+          old_vat = '''        // Auto VAT Detection & Processing
+        const totalAmountScanned = (typeof ocr.amount === 'number' && ocr.amount > 0) ? ocr.amount : amount;
+        let detectedVat = 0;
+        if (typeof ocr.vat === 'number' && ocr.vat > 0) {
+          detectedVat = ocr.vat;
+        } else if (totalAmountScanned > 0) {
+          detectedVat = Math.round((totalAmountScanned * 7 / 107) * 100) / 100;
+        }
+
+        const isVatDetected = !!(
+          (ocr.vat && ocr.vat > 0) ||
+          ocr.hasVat ||
+          ocr.taxId ||
+          ocr.invoiceId ||
+          (ocr.merchant && totalAmountScanned > 0)
+        );
+'''
+          new_vat = '''        // Auto VAT Detection & Processing
+        const totalAmountScanned = (typeof ocr.amount === 'number' && ocr.amount > 0) ? ocr.amount : amount;
+        // A merchant name alone is NOT proof that VAT applies.
+        // Only trust explicit VAT signals from the OCR result.
+        const isVatDetected = !!(
+          (typeof ocr.vat === 'number' && ocr.vat > 0) ||
+          ocr.hasVat === true ||
+          !!ocr.taxId ||
+          !!ocr.invoiceId
+        );
+        let detectedVat = 0;
+        if (isVatDetected && typeof ocr.vat === 'number' && ocr.vat > 0) {
+          detectedVat = ocr.vat;
+        } else if (isVatDetected && totalAmountScanned > 0) {
+          detectedVat = Math.round((totalAmountScanned * 7 / 107) * 100) / 100;
+        }
+'''
+          if old_vat not in s:
+              raise SystemExit('VAT detection block not found; refusing unsafe overwrite')
+          s = s.replace(old_vat, new_vat, 1)
+
+          s = s.replace('>With VAT (7%)</button>', '>มี VAT 7%</button>', 1)
+          s = s.replace('>Without VAT</button>', '>ไม่มี VAT</button>', 1)
+
+          marker = '''                  {hasVat && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-200/50 dark:border-slate-750">
+'''
+          insert = '''                  {hasVat && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-3 border-t border-slate-200/50 dark:border-slate-750">
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400">ราคาก่อน VAT</div>
+                        <div className="text-sm font-extrabold text-slate-900 dark:text-white">฿{Math.max((amount || 0) - (vatAmount || 0), 0).toLocaleString()}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3">
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400">VAT 7%</div>
+                        <div className="text-sm font-extrabold text-slate-900 dark:text-white">฿{(vatAmount || 0).toLocaleString()}</div>
+                      </div>
+                      <div className="rounded-xl border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-950/30 p-3">
+                        <div className="text-[10px] font-bold text-primary-600 dark:text-primary-400">ยอดรวม VAT</div>
+                        <div className="text-sm font-extrabold text-primary-800 dark:text-primary-200">฿{(amount || 0).toLocaleString()}</div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+'''
+          if marker not in s:
+              raise SystemExit('VAT UI marker not found; refusing unsafe overwrite')
+          s = s.replace(marker, insert, 1)
+
+          p.write_text(s, encoding='utf-8')
+
+          # Improve the OCR contract so future AI responses can explicitly return
+          # the amount before VAT without changing the existing request schema.
+          sp = Path('server.ts')
+          ss = sp.read_text(encoding='utf-8')
+          old_schema = '''  "amount": 0.00, // จำนวนเงินรวมสุทธิ Total Amount (ตัวเลขเท่านั้น)
+  "hasVat": true,'''
+          new_schema = '''  "amount": 0.00, // จำนวนเงินรวมสุทธิ Total Amount (ตัวเลขเท่านั้น)
+  "beforeVat": 0.00, // ราคาก่อน VAT หากเอกสารแสดงหรือคำนวณได้
+  "hasVat": true,'''
+          if old_schema in ss:
+              ss = ss.replace(old_schema, new_schema, 1)
+          sp.write_text(ss, encoding='utf-8')
+
+      - name: TypeScript check
+        run: npm install --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit repaired source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/MyRequestsView.tsx server.ts
+          if git diff --cached --quiet; then
+            echo "No source changes were required."
+            exit 0
+          fi
+          git commit -m "fix: repair OCR response handling and VAT display"
+          git push

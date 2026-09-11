@@ -286,9 +286,11 @@ export async function saveToFirestore(localKey: string, data: any) {
 }
 
 export function getFromCache(localKey: string, defaultValue: any = null) {
-  if (DB_CACHE[localKey] !== undefined && DB_CACHE[localKey] !== null) {
-    if (Array.isArray(DB_CACHE[localKey]) && DB_CACHE[localKey].length > 0) return DB_CACHE[localKey];
-    if (!Array.isArray(DB_CACHE[localKey]) && Object.keys(DB_CACHE[localKey]).length > 0) return DB_CACHE[localKey];
+  // Once Firestore has delivered a snapshot, that snapshot is authoritative even
+  // when the collection is empty. This prevents deleted data from being resurrected
+  // from stale localStorage.
+  if (Object.prototype.hasOwnProperty.call(DB_CACHE, localKey)) {
+    return DB_CACHE[localKey];
   }
 
   try {
@@ -304,5 +306,5 @@ export function getFromCache(localKey: string, defaultValue: any = null) {
     console.warn(`Error reading ${localKey} from localStorage fallback:`, e);
   }
 
-  return DB_CACHE[localKey] !== undefined ? DB_CACHE[localKey] : defaultValue;
+  return defaultValue;
 }

@@ -94,7 +94,7 @@ export function setupFirestoreSync() {
       department_id: d.data().department_id || d.id
     }));
     DB_CACHE['okey_db_departments'] = departments;
-    DB_CACHE['okey_budgets'] = departments.map(d => ({
+    DB_CACHE['okey_budgets'] = departments.map((d: any) => ({
       department: departmentName(d),
       allocated: departmentBudget(d),
       spent: departmentSpent(d),

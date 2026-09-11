@@ -3,8 +3,8 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-// AI OCR compatibility: the OCR client may inspect an error response as JSON
-// and then fall back to text. Cache the /api/ocr body once so either reader is safe.
+// AI OCR compatibility: cache /api/ocr response bodies once, then return
+// a real Response object so native Response getters/methods keep a valid receiver.
 const originalFetch = window.fetch.bind(window);
 window.fetch = async (...args) => {
   const input = args[0];
@@ -20,10 +20,11 @@ window.fetch = async (...args) => {
   }
 
   const bodyText = await response.text();
-  const safeResponse = Object.create(response) as Response;
-  safeResponse.json = async () => JSON.parse(bodyText);
-  safeResponse.text = async () => bodyText;
-  return safeResponse;
+  return new Response(bodyText, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 };
 
 createRoot(document.getElementById('root')!).render(

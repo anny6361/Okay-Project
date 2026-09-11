@@ -61,30 +61,15 @@ Collection names, persistence, caching, synchronization, and serialization belon
 
 ### Documents
 
-Every business document must have a stable document ID and, when applicable, a reference to its parent business entity such as `PROJECT_ID`.
+Business documents should reference the existing business record that they belong to. Do not create a replacement master-data model merely to support a document feature.
 
-Issued documents should preserve a snapshot of values used at issuance time. Draft documents may resolve current master data.
+## Procurement
 
-## Procurement direction
+The previous proposed procurement/project-allocation model has been removed.
 
-The procurement system will use `PROJECTS` as the central business context.
+No new `Project Allocation`, `Project Master`, multiple-budget-code-per-project, or multiple-account-code-per-project model is part of this architecture.
 
-```text
-PROJECTS
-  |
-  +-- budget allocations
-  +-- account allocations
-  +-- vendor
-  +-- TOR
-  +-- request / approval
-  +-- announcement
-  +-- result report
-  +-- PO
-  +-- attachments
-  +-- audit trail
-```
-
-One project may have multiple budget codes and multiple account codes. Each allocation must be explicit rather than inferred from a display label.
+When procurement document work is started again, the existing project data already present in the application must remain the source of truth. New document-specific context must be added around that existing data rather than replacing or restructuring it.
 
 ## Migration policy
 

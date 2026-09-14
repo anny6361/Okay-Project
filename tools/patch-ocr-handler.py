@@ -34,10 +34,8 @@ if matches:
         p.write_text(new_s, encoding='utf-8')
         s = new_s
 
-# Diagnostic: show every call site that starts OCR and every file-input handler.
-for needle in ('scanSingleFileWithAI(', 'onChange=', 'type="file"', "type='file'", 'accept='):
-    print(f'===== {needle} =====')
-    for m in re.finditer(re.escape(needle), s):
-        start = max(0, s.rfind('\n', 0, max(0, m.start()-700)))
-        end = min(len(s), s.find('\n', min(len(s), m.end()+1200)))
-        print(s[start:end])
+m = re.search(r'(const processFileForOCR[\\s\\S]*?)(?=const handleRemoveUploadedFile)', s)
+if not m:
+    raise SystemExit('processFileForOCR function not found')
+print('===== processFileForOCR =====')
+print(m.group(1))

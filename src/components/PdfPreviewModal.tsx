@@ -605,7 +605,7 @@ export default function PdfPreviewModal() {
               <span>รายการ ({activeItems.length}):</span>
             </span>
             {activeItems.map((item, idx) => {
-              const parsed = parseItemType(item.url || item.html || '', item.type);
+              const parsed = parseItemType(item.url || item.html || '', item.type === 'unknown' ? undefined : item.type, item.name || item.title);
               const isActive = idx === currentIndex;
               return (
                 <button

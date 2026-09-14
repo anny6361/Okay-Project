@@ -549,9 +549,16 @@ export default function MyRequestsView({
 
       if (!localDataUrl) continue;
 
+      // Browser MIME can be empty/incorrect for PDFs. Resolve the type from
+      // both MIME and filename before handing the file to OCR.
+      const fileNameLower = (file.name || '').toLowerCase();
+      const rawFileType = (file.type || '').toLowerCase().trim();
+      const isPdfFile = rawFileType === 'application/pdf' || fileNameLower.endsWith('.pdf');
+      const effectiveFileType = isPdfFile ? 'application/pdf' : (rawFileType || 'image/jpeg');
+
       const fileObj = {
         name: file.name,
-        type: file.type || 'image/jpeg',
+        type: effectiveFileType,
         size: file.size,
         dataUrl: localDataUrl,
         rawBase64: localDataUrl
@@ -561,9 +568,9 @@ export default function MyRequestsView({
       newReceiptUrls.push(localDataUrl);
 
       // Check if this file can be scanned by OCR (image or PDF)
-      const fileTypeLower = (file.type || '').toLowerCase();
-      const fileNameLower = (file.name || '').toLowerCase();
-      if (!firstAddedFileObj && (fileTypeLower.startsWith('image/') || fileTypeLower === 'application/pdf' || fileNameLower.endsWith('.pdf'))) {
+      // PDF detection must use the normalized type so OCR starts even when
+      // the browser reports an empty/non-standard MIME type.
+      if (!firstAddedFileObj && (effectiveFileType.startsWith('image/') || effectiveFileType === 'application/pdf')) {
         firstAddedFileObj = fileObj;
       }
     }

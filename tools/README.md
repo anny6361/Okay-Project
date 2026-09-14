@@ -1,0 +1,1 @@
+This directory contains temporary maintenance scripts used during repository fixes.

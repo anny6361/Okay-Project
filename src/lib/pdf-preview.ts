@@ -26,8 +26,8 @@ function normalizeItem(item: PdfPreviewItem): PdfPreviewItem {
   return {
     ...item,
     url: getAttachmentUrl(item),
-    name: item.name || item.title || 'เอกสารแนบ',
-    title: item.title || item.name || 'เอกสารแนบ',
+    name: normalized.name,
+    title: normalized.title,
     type: normalized.type as PdfPreviewItem['type'],
     mimeType: normalized.mimeType
   };

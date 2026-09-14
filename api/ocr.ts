@@ -89,7 +89,9 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       return res.status(400).json({ success: false, error: 'Invalid file data' });
     }
 
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+    // Gemini 2.0 Flash is no longer available for this project. Use the
+    // current Gemini 3.6 Flash model for multimodal OCR.
+    const models = ['gemini-3.6-flash'];
     let lastError = 'Gemini AI ไม่สามารถประมวลผลเอกสารได้';
 
     for (const model of models) {

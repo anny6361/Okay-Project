@@ -390,18 +390,26 @@ export default function MyRequestsView({
         })
       });
 
-      if (!response.ok) {
-        let errMessage = `Server returned ${response.status}`;
+      if (!response.ok) {    let errMessage = `Server returned ${response.status}`;
+
+    try {
+      const responseBody = await response.text();
+      if (responseBody) {
         try {
-          const errJson = await response.json();
+          const errJson = JSON.parse(responseBody);
           if (errJson && errJson.error) {
-            errMessage = errJson.error;
+            errMessage = String(errJson.error);
+          } else {
+            errMessage = responseBody;
           }
         } catch {
-          const text = await response.text();
-          if (text) errMessage = text;
+          errMessage = responseBody;
         }
-        throw new Error(errMessage);
+      }
+    } catch {
+      // Keep HTTP status message if the response body cannot be read.
+    }
+    throw new Error(errMessage);
       }
 
       const result = await response.json();

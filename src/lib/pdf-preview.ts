@@ -1,16 +1,19 @@
+import { normalizeAttachment, resolveAttachmentKind, getAttachmentUrl } from './attachment-resolver';
+
 export type PdfPreviewItem = {
   url?: string;
   html?: string;
   title?: string;
-  type?: 'pdf' | 'image' | 'html';
+  type?: 'pdf' | 'image' | 'html' | 'unknown';
   name?: string;
+  mimeType?: string;
 };
 
 export type PdfContent = {
   html?: string;
   title?: string;
   fileUrl?: string;
-  fileType?: 'pdf' | 'image' | 'html';
+  fileType?: 'pdf' | 'image' | 'html' | 'unknown';
   items?: PdfPreviewItem[];
   attachments?: (string | PdfPreviewItem)[];
   initialIndex?: number;
@@ -18,58 +21,45 @@ export type PdfContent = {
 
 let listeners: ((content: PdfContent | null) => void)[] = [];
 
-function normalizePreviewItem(item: PdfPreviewItem): PdfPreviewItem {
-  const url = String(item.url || '').trim();
-  const name = String(item.name || item.title || '').trim();
-  const lowerUrl = url.toLowerCase();
-  const lowerName = name.toLowerCase();
-
-  const isPdf = item.type === 'pdf' ||
-    lowerName.endsWith('.pdf') ||
-    lowerUrl.startsWith('data:application/pdf') ||
-    lowerUrl.startsWith('blob:application/pdf') ||
-    lowerUrl.startsWith('jvberi') ||
-    lowerUrl.includes('.pdf');
-
-  const isImage = item.type === 'image' ||
-    lowerUrl.startsWith('data:image/') ||
-    /\.(jpg|jpeg|png|webp|gif|svg|bmp)(\?.*)?$/i.test(lowerUrl) ||
-    /\.(jpg|jpeg|png|webp|gif|svg|bmp)(\?.*)?$/i.test(lowerName);
-
+function normalizeItem(item: PdfPreviewItem): PdfPreviewItem {
+  const normalized = normalizeAttachment(item);
   return {
     ...item,
-    name: name || item.name,
-    title: item.title || name || 'เอกสารแนบ',
-    type: isPdf ? 'pdf' : isImage ? 'image' : (item.type || 'html')
+    url: getAttachmentUrl(item),
+    name: item.name || item.title || 'เอกสารแนบ',
+    title: item.title || item.name || 'เอกสารแนบ',
+    type: normalized.type as PdfPreviewItem['type'],
+    mimeType: normalized.mimeType
   };
 }
 
-export function openPdfPreview(
-  htmlOrOptions: string | PdfContent,
-  title: string = 'Document Preview'
-) {
+export function openPdfPreview(htmlOrOptions: string | PdfContent, title = 'Document Preview') {
   let payload: PdfContent;
+
   if (typeof htmlOrOptions === 'string') {
     payload = { html: htmlOrOptions, title };
   } else {
-    const items = (htmlOrOptions.items || []).map(normalizePreviewItem);
-    const fileName = String(htmlOrOptions.title || title).trim();
-    const fileUrl = String(htmlOrOptions.fileUrl || '').trim();
-    const lowerName = fileName.toLowerCase();
-    const lowerUrl = fileUrl.toLowerCase();
-    const inferredPdf = htmlOrOptions.fileType === 'pdf' ||
-      lowerName.endsWith('.pdf') ||
-      lowerUrl.startsWith('data:application/pdf') ||
-      lowerUrl.startsWith('blob:application/pdf') ||
-      lowerUrl.includes('.pdf');
+    const items = (htmlOrOptions.items || []).map(normalizeItem);
+    const attachments = (htmlOrOptions.attachments || []).map((item) =>
+      typeof item === 'string'
+        ? normalizeItem({ url: item, name: 'เอกสารแนบ' })
+        : normalizeItem(item)
+    );
+    const base = normalizeAttachment({
+      url: htmlOrOptions.fileUrl,
+      name: htmlOrOptions.title,
+      type: htmlOrOptions.fileType
+    });
 
     payload = {
-      title: htmlOrOptions.title || title,
       ...htmlOrOptions,
-      fileType: inferredPdf ? 'pdf' : htmlOrOptions.fileType,
-      items
+      title: htmlOrOptions.title || title,
+      fileType: resolveAttachmentKind(base) as PdfContent['fileType'],
+      items,
+      attachments
     };
   }
+
   listeners.forEach(l => l(payload));
 }
 

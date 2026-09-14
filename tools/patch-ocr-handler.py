@@ -26,14 +26,18 @@ replacement = '''    let errMessage = `Server returned ${response.status}`;
     throw new Error(errMessage);'''
 
 matches = list(pattern.finditer(s))
-if not matches:
-    raise SystemExit('OCR error handler not found')
 if len(matches) > 1:
-    raise SystemExit(f'Expected one OCR error handler, found {len(matches)}')
+    raise SystemExit(f'Expected at most one OCR error handler, found {len(matches)}')
+if matches:
+    new_s = pattern.sub(replacement, s, count=1)
+    if new_s != s:
+        p.write_text(new_s, encoding='utf-8')
+        s = new_s
 
-new_s = pattern.sub(replacement, s, count=1)
-if new_s == s:
-    raise SystemExit('No change made')
-
-p.write_text(new_s, encoding='utf-8')
-print('Patched MyRequestsView.tsx OCR response handling safely.')
+# Diagnostic: show every call site that starts OCR and every file-input handler.
+for needle in ('scanSingleFileWithAI(', 'onChange=', 'type="file"', "type='file'", 'accept='):
+    print(f'===== {needle} =====')
+    for m in re.finditer(re.escape(needle), s):
+        start = max(0, s.rfind('\n', 0, max(0, m.start()-700)))
+        end = min(len(s), s.find('\n', min(len(s), m.end()+1200)))
+        print(s[start:end])

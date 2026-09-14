@@ -32,6 +32,7 @@ import { CATEGORIES_CONFIG } from '../data/masterData';
 import { getDbDepartments, getDbCategories, saveDbCategories, getDbReplacementPolicy, getClearingStatusInfo, getRealWorkflowStepInfo, getSafePreviewUrl, getDbRequests, getDbCompanyData } from '../data/db';
 import { getLetterheadHtml } from '../utils/letterheadHtml';
 import { printHtmlDirectly } from '../utils/pdfGenerator';
+import { resolveAttachmentKind } from '../lib/attachment-resolver';
 
 
 interface MyRequestsViewProps {
@@ -3002,10 +3003,8 @@ export default function MyRequestsView({
         const attType = String(currentAtt?.type || '').toLowerCase();
         const attUrl = String(currentAtt?.dataUrl || '').toLowerCase();
 
-        const isPdf = attType.includes('pdf') || 
-                      attUrl.startsWith('data:application/pdf') || 
-                      attUrl.includes('.pdf') || 
-                      attUrl.startsWith('jvberi');
+        const attachmentKind = resolveAttachmentKind({ url: attUrl, name: currentAtt.name, type: attType });
+    const isPdf = attachmentKind === 'pdf';
 
         const safeUrl = getSafePreviewUrl(currentAtt.dataUrl);
 
@@ -3135,7 +3134,7 @@ export default function MyRequestsView({
                         url: getSafePreviewUrl(a.dataUrl),
                         title: a.name || 'เอกสารแนบ',
                         name: a.name || 'เอกสารแนบ',
-                        type: (a.dataUrl.toLowerCase().includes('.pdf') || a.dataUrl.startsWith('data:application/pdf')) ? 'pdf' : 'image'
+                        type: resolveAttachmentKind({ url: a.dataUrl, name: a.name, type: a.type })
                       })),
                       initialIndex: viewerIndex
                     });

@@ -26,6 +26,7 @@ import {
   AttachmentItem 
 } from '../utils/pdfConsolidator';
 import { getSafePreviewUrl } from '../data/db';
+import { resolveAttachmentKind, getAttachmentUrl } from '../lib/attachment-resolver';
 
 function getSanitizedPrintHtml(rawHtml: string) {
   let clean = rawHtml
@@ -86,37 +87,20 @@ function getSanitizedPrintHtml(rawHtml: string) {
   return clean;
 }
 
-function parseItemType(urlOrHtml: string, hintType?: 'pdf' | 'image' | 'html') {
+function parseItemType(urlOrHtml: string, hintType?: 'pdf' | 'image' | 'html' | 'unknown', nameHint?: string) {
   if (!urlOrHtml) return { isPdf: false, isImg: false, isHtml: false, targetUrl: '', cleanHtml: '' };
-
-  const str = urlOrHtml.trim();
-  const lower = str.toLowerCase();
-
-  if (hintType === 'pdf' || lower.startsWith('data:application/pdf') || lower.startsWith('blob:application/pdf') || (lower.startsWith('http') && lower.includes('.pdf'))) {
-    return { isPdf: true, isImg: false, isHtml: false, targetUrl: str, cleanHtml: '' };
-  }
-
-  if (hintType === 'image' || lower.startsWith('data:image/') || /\.(jpg|jpeg|png|webp|gif|svg|bmp)(\?.*)?$/i.test(lower)) {
-    return { isPdf: false, isImg: true, isHtml: false, targetUrl: str, cleanHtml: '' };
-  }
-
-  // Check if string contains an iframe with PDF or image
-  const iframeSrcMatch = str.match(/<iframe\s+[^>]*src=["']([^"']+)["']/i);
-  if (iframeSrcMatch && iframeSrcMatch[1]) {
-    const rawUrl = iframeSrcMatch[1];
-    const rawLower = rawUrl.toLowerCase();
-    if (rawLower.startsWith('data:application/pdf') || rawLower.includes('.pdf') || rawLower.startsWith('blob:')) {
-      return { isPdf: true, isImg: false, isHtml: false, targetUrl: rawUrl, cleanHtml: cleanCssText(str) };
+  const kind = resolveAttachmentKind({ url: urlOrHtml, name: nameHint, type: hintType });
+  if (kind === 'pdf') return { isPdf: true, isImg: false, isHtml: false, targetUrl: getAttachmentUrl({ url: urlOrHtml }), cleanHtml: '' };
+  if (kind === 'image') return { isPdf: false, isImg: true, isHtml: false, targetUrl: getAttachmentUrl({ url: urlOrHtml }), cleanHtml: '' };
+  if (urlOrHtml.trim().startsWith('<')) {
+    const iframe = urlOrHtml.match(/<iframe\s+[^>]*src=["']([^"']+)["']/i);
+    if (iframe?.[1]) {
+      const nested = resolveAttachmentKind({ url: iframe[1], name: nameHint });
+      if (nested === 'pdf') return { isPdf: true, isImg: false, isHtml: false, targetUrl: iframe[1], cleanHtml: cleanCssText(urlOrHtml) };
+      if (nested === 'image') return { isPdf: false, isImg: true, isHtml: false, targetUrl: iframe[1], cleanHtml: cleanCssText(urlOrHtml) };
     }
   }
-
-  // Check if string is a simple wrapper around an img
-  const imgSrcMatch = str.match(/<img\s+[^>]*src=["']([^"']+)["']/i);
-  if (imgSrcMatch && imgSrcMatch[1] && str.length < 3500 && !str.includes('<table') && !str.includes('<tr')) {
-    return { isPdf: false, isImg: true, isHtml: false, targetUrl: imgSrcMatch[1], cleanHtml: cleanCssText(str) };
-  }
-
-  return { isPdf: false, isImg: false, isHtml: true, targetUrl: '', cleanHtml: cleanCssText(str) };
+  return { isPdf: false, isImg: false, isHtml: true, targetUrl: '', cleanHtml: cleanCssText(urlOrHtml) };
 }
 
 export default function PdfPreviewModal() {
@@ -168,7 +152,7 @@ export default function PdfPreviewModal() {
   const currentParsed = useMemo(() => {
     if (!activeItem) return null;
     const source = activeItem.url || activeItem.html || content?.html || '';
-    return parseItemType(source, activeItem.type || content?.fileType);
+    return parseItemType(source, activeItem.type || content?.fileType, activeItem.name || activeItem.title || content?.title);
   }, [activeItem, content]);
 
   // Normalized list of all attachments to bundle into the single PDF & Print job

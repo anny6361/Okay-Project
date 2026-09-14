@@ -1,0 +1,35 @@
+name: Fix attachment typecheck
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix type union
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('src/components/PdfPreviewModal.tsx')
+          s = p.read_text(encoding='utf-8')
+          old = "const parsed = parseItemType(item.url || item.html || '', item.type);"
+          new = "const parsed = parseItemType(item.url || item.html || '', item.type === 'unknown' ? undefined : item.type, item.name || item.title);"
+          if old not in s:
+              raise SystemExit('expected typecheck line not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          Path('.github/workflows/fix-attachment-typecheck.yml').unlink()
+          PY
+      - name: Validate
+        run: |
+          npm install --ignore-scripts
+          npm run build
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/PdfPreviewModal.tsx .github/workflows/fix-attachment-typecheck.yml
+          git commit -m "fix: normalize unknown attachment type before preview"
+          git push origin HEAD:main

@@ -12,6 +12,7 @@ export type AttachmentLike = {
 const PDF_MIME = 'application/pdf';
 const PDF_RE = /\.pdf(?:[?#].*)?$/i;
 const IMAGE_RE = /\.(?:jpe?g|png|webp|gif|svg|bmp|tiff?|avif)(?:[?#].*)?$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const clean = (value: unknown) => String(value ?? '').trim();
 
@@ -59,10 +60,22 @@ export function resolveAttachmentKind(item: AttachmentLike = {}): AttachmentKind
   return 'unknown';
 }
 
+export function getAttachmentDisplayName(item: AttachmentLike = {}) {
+  const name = clean(item.name || item.title);
+  const kind = resolveAttachmentKind(item);
+  if (!name || UUID_RE.test(name)) {
+    if (kind === 'pdf') return 'เอกสารแนบ.pdf';
+    if (kind === 'image') return 'ภาพเอกสารแนบ';
+    if (kind === 'html') return 'เอกสารแนบ';
+    return 'เอกสารแนบ';
+  }
+  return name;
+}
+
 export function normalizeAttachment<T extends AttachmentLike>(item: T) {
   const kind = resolveAttachmentKind(item);
   const mimeType = resolveAttachmentMime(item) || (kind === 'pdf' ? PDF_MIME : kind === 'image' ? 'image/*' : '');
-  return { ...item, type: kind, mimeType };
+  return { ...item, type: kind, mimeType, name: getAttachmentDisplayName(item), title: getAttachmentDisplayName(item) };
 }
 
 export function getAttachmentUrl(item: AttachmentLike = {}) {

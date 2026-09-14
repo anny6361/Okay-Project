@@ -34,7 +34,7 @@ if matches:
         p.write_text(new_s, encoding='utf-8')
         s = new_s
 
-m = re.search(r'(const processFileForOCR[\\s\\S]*?)(?=const handleRemoveUploadedFile)', s)
+m = re.search(r'(const processFileForOCR[\s\S]*?)(?=const handleRemoveUploadedFile)', s)
 if not m:
     raise SystemExit('processFileForOCR function not found')
 print('===== processFileForOCR =====')

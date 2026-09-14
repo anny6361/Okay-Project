@@ -1,4 +1,13 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+interface VercelRequestLike {
+  method?: string;
+  body?: any;
+}
+
+interface VercelResponseLike {
+  setHeader(name: string, value: string): void;
+  status(code: number): VercelResponseLike;
+  json(value: any): VercelResponseLike;
+}
 
 const PROMPT = `คุณเป็นระบบวิเคราะห์และดึงข้อมูลใบเสร็จรับเงินอัจฉริยะ (Receipt OCR AI)
 ให้อ่านไฟล์ภาพหรือ PDF ของใบเสร็จนี้ และสกัดข้อมูลออกมาตอบกลับเป็น JSON เท่านั้น:
@@ -41,7 +50,7 @@ function stripDataUrl(value: string): string {
   return value.replace(/\s/g, '');
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: VercelRequestLike, res: VercelResponseLike) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ success: false, error: 'Method Not Allowed' });

@@ -1,0 +1,289 @@
+name: Apply attachment viewer fix
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Patch attachment pipeline
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          def read(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              Path(path).write_text(text, encoding='utf-8')
+
+          # 1) Add a single source of truth for attachment type detection.
+          resolver = r'''export type AttachmentKind = 'pdf' | 'image' | 'html' | 'unknown';
+
+          export type AttachmentLike = {
+            url?: string;
+            dataUrl?: string;
+            name?: string;
+            title?: string;
+            type?: string;
+            mimeType?: string;
+          };
+
+          const PDF_MIME = 'application/pdf';
+          const IMAGE_RE = /\\.(?:jpe?g|png|webp|gif|svg|bmp|tiff?|avif)(?:[?#].*)?$/i;
+          const PDF_RE = /\\.pdf(?:[?#].*)?$/i;
+
+          function clean(value: unknown) {
+            return String(value ?? '').trim();
+          }
+
+          function fromDataUrl(value: string) {
+            const m = value.match(/^data:([^;,]+)[;,]/i);
+            return m?.[1]?.toLowerCase() || '';
+          }
+
+          function fromBase64Signature(value: string) {
+            const v = value.replace(/^data:[^,]*,?/i, '').trim();
+            if (v.startsWith('JVBER')) return PDF_MIME;
+            if (v.startsWith('/9j/')) return 'image/jpeg';
+            if (v.startsWith('iVBORw')) return 'image/png';
+            if (v.startsWith('R0lGOD')) return 'image/gif';
+            if (v.startsWith('UklGR')) return 'image/webp';
+            return '';
+          }
+
+          export function resolveAttachmentMime(item: AttachmentLike = {}) {
+            const explicit = clean(item.mimeType || item.type).toLowerCase();
+            const url = clean(item.url || item.dataUrl);
+            const name = clean(item.name || item.title);
+            const dataMime = fromDataUrl(url);
+
+            if (explicit === PDF_MIME || explicit === 'pdf' || explicit.includes('/pdf')) return PDF_MIME;
+            if (explicit.startsWith('image/')) return explicit;
+            if (dataMime) return dataMime;
+            if (PDF_RE.test(name) || PDF_RE.test(url) || url.toLowerCase().startsWith('jvberi')) return PDF_MIME;
+            if (IMAGE_RE.test(name) || IMAGE_RE.test(url)) {
+              const ext = (name || url).split(/[?#]/)[0].split('.').pop()?.toLowerCase();
+              return ext === 'svg' ? 'image/svg+xml' : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+            }
+            const signature = fromBase64Signature(url);
+            if (signature) return signature;
+            return explicit || '';
+          }
+
+          export function resolveAttachmentKind(item: AttachmentLike = {}): AttachmentKind {
+            const mime = resolveAttachmentMime(item);
+            if (mime === PDF_MIME || mime.includes('/pdf')) return 'pdf';
+            if (mime.startsWith('image/')) return 'image';
+            const url = clean(item.url || item.dataUrl).toLowerCase();
+            const name = clean(item.name || item.title).toLowerCase();
+            if (PDF_RE.test(name) || PDF_RE.test(url)) return 'pdf';
+            if (IMAGE_RE.test(name) || IMAGE_RE.test(url)) return 'image';
+            if (clean(item.type).toLowerCase() === 'html' || url.startsWith('data:text/html')) return 'html';
+            return 'unknown';
+          }
+
+          export function normalizeAttachment<T extends AttachmentLike>(item: T): T & { type: AttachmentKind; mimeType: string } {
+            const kind = resolveAttachmentKind(item);
+            const mime = resolveAttachmentMime(item) || (kind === 'pdf' ? PDF_MIME : kind === 'image' ? 'image/*' : '');
+            return { ...item, type: kind, mimeType: mime } as T & { type: AttachmentKind; mimeType: string };
+          }
+
+          export function getAttachmentUrl(item: AttachmentLike = {}) {
+            return clean(item.url || item.dataUrl);
+          }
+          '''
+          Path('src/lib/attachment-resolver.ts').write_text(resolver + '\n', encoding='utf-8')
+
+          # 2) Replace pdf-preview.ts with a small, centralized normalization layer.
+          pdf_preview = r'''import { normalizeAttachment, resolveAttachmentKind, getAttachmentUrl, AttachmentLike } from './attachment-resolver';
+
+          export type PdfPreviewItem = {
+            url?: string;
+            html?: string;
+            title?: string;
+            type?: 'pdf' | 'image' | 'html' | 'unknown';
+            name?: string;
+            mimeType?: string;
+          };
+
+          export type PdfContent = {
+            html?: string;
+            title?: string;
+            fileUrl?: string;
+            fileType?: 'pdf' | 'image' | 'html' | 'unknown';
+            items?: PdfPreviewItem[];
+            attachments?: (string | PdfPreviewItem)[];
+            initialIndex?: number;
+          };
+
+          let listeners: ((content: PdfContent | null) => void)[] = [];
+
+          function normalizeItem(item: PdfPreviewItem): PdfPreviewItem {
+            const normalized = normalizeAttachment(item as AttachmentLike);
+            return {
+              ...item,
+              url: getAttachmentUrl(item),
+              name: item.name || item.title || 'เอกสารแนบ',
+              title: item.title || item.name || 'เอกสารแนบ',
+              type: normalized.type as PdfPreviewItem['type'],
+              mimeType: normalized.mimeType
+            };
+          }
+
+          export function openPdfPreview(htmlOrOptions: string | PdfContent, title = 'Document Preview') {
+            let payload: PdfContent;
+            if (typeof htmlOrOptions === 'string') {
+              payload = { html: htmlOrOptions, title };
+            } else {
+              const items = (htmlOrOptions.items || []).map(normalizeItem);
+              const attachments = (htmlOrOptions.attachments || []).map((item) => {
+                if (typeof item === 'string') {
+                  return normalizeItem({ url: item, name: 'เอกสารแนบ' });
+                }
+                return normalizeItem(item);
+              });
+              const base = normalizeAttachment({
+                url: htmlOrOptions.fileUrl,
+                name: htmlOrOptions.title,
+                type: htmlOrOptions.fileType
+              });
+              payload = {
+                ...htmlOrOptions,
+                title: htmlOrOptions.title || title,
+                fileUrl: htmlOrOptions.fileUrl,
+                fileType: (resolveAttachmentKind(base) as PdfContent['fileType']),
+                items,
+                attachments
+              };
+            }
+            listeners.forEach(l => l(payload));
+          }
+
+          export function closePdfPreview() {
+            listeners.forEach(l => l(null));
+          }
+
+          export function subscribePdfPreview(listener: (content: PdfContent | null) => void) {
+            listeners.push(listener);
+            return () => {
+              listeners = listeners.filter(l => l !== listener);
+            };
+          }
+          '''
+          Path('src/lib/pdf-preview.ts').write_text(pdf_preview + '\n', encoding='utf-8')
+
+          # 3) Make PdfPreviewModal use the same resolver for every item.
+          modal_path = Path('src/components/PdfPreviewModal.tsx')
+          modal = read(modal_path)
+          old_import = "import { getSafePreviewUrl } from '../data/db';"
+          new_import = old_import + "\nimport { resolveAttachmentKind, getAttachmentUrl } from '../lib/attachment-resolver';"
+          if old_import in modal and "attachment-resolver" not in modal:
+              modal = modal.replace(old_import, new_import, 1)
+
+          start = modal.find('function parseItemType(')
+          end = modal.find('\n}\n\nexport default function PdfPreviewModal', start)
+          if start == -1 or end == -1:
+              raise SystemExit('parseItemType block not found; refusing partial patch')
+          new_parser = r'''function parseItemType(urlOrHtml: string, hintType?: 'pdf' | 'image' | 'html' | 'unknown', nameHint?: string) {
+            if (!urlOrHtml) return { isPdf: false, isImg: false, isHtml: false, targetUrl: '', cleanHtml: '' };
+            const kind = resolveAttachmentKind({ url: urlOrHtml, name: nameHint, type: hintType });
+            if (kind === 'pdf') return { isPdf: true, isImg: false, isHtml: false, targetUrl: getAttachmentUrl({ url: urlOrHtml }), cleanHtml: '' };
+            if (kind === 'image') return { isPdf: false, isImg: true, isHtml: false, targetUrl: getAttachmentUrl({ url: urlOrHtml }), cleanHtml: '' };
+            if (urlOrHtml.trim().startsWith('<')) {
+              const iframeSrcMatch = urlOrHtml.match(/<iframe\s+[^>]*src=["']([^"']+)["']/i);
+              if (iframeSrcMatch?.[1]) {
+                const iframeKind = resolveAttachmentKind({ url: iframeSrcMatch[1], name: nameHint });
+                if (iframeKind === 'pdf') return { isPdf: true, isImg: false, isHtml: false, targetUrl: iframeSrcMatch[1], cleanHtml: cleanCssText(urlOrHtml) };
+                if (iframeKind === 'image') return { isPdf: false, isImg: true, isHtml: false, targetUrl: iframeSrcMatch[1], cleanHtml: cleanCssText(urlOrHtml) };
+              }
+            }
+            return { isPdf: false, isImg: false, isHtml: true, targetUrl: '', cleanHtml: cleanCssText(urlOrHtml) };
+          }'''
+          modal = modal[:start] + new_parser + modal[end+2:]
+          modal = modal.replace(
+              "return parseItemType(source, activeItem.type || content?.fileType);",
+              "return parseItemType(source, activeItem.type || content?.fileType, activeItem.name || activeItem.title || content?.title);"
+          )
+          modal = modal.replace(
+              "const target = currentParsed.targetUrl;\n      const safeUrl = getSafePreviewUrl(target);",
+              "const target = currentParsed.targetUrl;\n      const safeUrl = getSafePreviewUrl(target);\n      if (!safeUrl) return;"
+          )
+          modal_path.write_text(modal, encoding='utf-8')
+
+          # 4) Fix the initial Interactive Viewer type detection in MyRequestsView without rewriting the file.
+          my_path = Path('src/components/MyRequestsView.tsx')
+          my = read(my_path)
+          if "attachment-resolver" not in my:
+              marker = "import { printHtmlDirectly } from '../utils/pdfGenerator';"
+              if marker not in my:
+                  raise SystemExit('MyRequestsView import marker not found; refusing patch')
+              my = my.replace(marker, marker + "\nimport { resolveAttachmentKind, getAttachmentUrl } from '../lib/attachment-resolver';", 1)
+
+          # Replace the known initial attachment item mapping so Firebase URLs without .pdf are classified correctly.
+          old_map = """items: attachmentList.map(a => ({\n  url: getSafePreviewUrl(a.dataUrl),\n  title: a.name || 'เอกสารแนบ',\n  name: a.name || 'เอกสารแนบ',\n  type: (a.dataUrl.toLowerCase().includes('.pdf') || a.dataUrl.startsWith('data:application/pdf')) ? 'pdf' : 'image'\n})),"""
+          new_map = """items: attachmentList.map(a => ({\n  url: getSafePreviewUrl(a.dataUrl),\n  title: a.name || 'เอกสารแนบ',\n  name: a.name || 'เอกสารแนบ',\n  type: resolveAttachmentKind({ url: a.dataUrl, name: a.name, type: a.type })\n})),"""
+          if old_map in my:
+              my = my.replace(old_map, new_map, 1)
+          else:
+              # The source can differ slightly; patch the exact type expression if present.
+              my, n = re.subn(r"type:\s*\(a\.dataUrl\.toLowerCase\(\)\.includes\('\.pdf'\).*?\)\s*\?\s*'pdf'\s*:\s*'image'", "type: resolveAttachmentKind({ url: a.dataUrl, name: a.name, type: a.type })", my, count=1, flags=re.S)
+              if n == 0:
+                  raise SystemExit('MyRequestsView attachment mapping not found; refusing patch')
+
+          # Replace the known isPdf expression in the interactive viewer.
+          my, n = re.subn(
+              r"const isPdf = attType\.includes\('pdf'\)\s*\|\|\s*attUrl\.startsWith\('data:application/pdf'\)\s*\|\|\s*attUrl\.includes\('\.pdf'\)\s*\|\|\s*attUrl\.startsWith\('jvberi'\);",
+              "const attachmentKind = resolveAttachmentKind({ url: attUrl, name: currentAtt.name, type: attType });\n    const isPdf = attachmentKind === 'pdf';",
+              my, count=1
+          )
+          if n == 0:
+              # Do not fail if this older block is absent; the modal normalization still protects the main flow.
+              print('Interactive viewer isPdf block not found; leaving existing block unchanged')
+          my_path.write_text(my, encoding='utf-8')
+
+          # 5) Ensure the temporary workflow removes itself after applying the patch.
+          wf = Path('.github/workflows/fix-attachment-viewer.yml')
+          if wf.exists():
+              wf.unlink()
+
+          # Validate that only intended files changed.
+          allowed = {
+            'src/lib/attachment-resolver.ts',
+            'src/lib/pdf-preview.ts',
+            'src/components/PdfPreviewModal.tsx',
+            'src/components/MyRequestsView.tsx',
+          }
+          changed = set()
+          import subprocess
+          out = subprocess.check_output(['git','status','--short'], text=True)
+          for line in out.splitlines():
+              if line.strip(): changed.add(line[3:])
+          if not changed.issubset(allowed):
+              raise SystemExit(f'Unexpected changed files: {sorted(changed - allowed)}')
+          print('Patched:', sorted(changed))
+          PY
+
+      - name: Install and validate
+        run: |
+          npm install --ignore-scripts
+          npm run build
+
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/attachment-resolver.ts src/lib/pdf-preview.ts src/components/PdfPreviewModal.tsx src/components/MyRequestsView.tsx .github/workflows/fix-attachment-viewer.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: centralize attachment preview and print handling"
+          git push origin HEAD:main

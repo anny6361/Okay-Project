@@ -1,0 +1,103 @@
+name: Finish attachment viewer fixes
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch viewer components
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          # PdfPreviewModal: use the centralized resolver for PDF/image/HTML classification.
+          p = Path('src/components/PdfPreviewModal.tsx')
+          s = p.read_text(encoding='utf-8')
+          if "../lib/attachment-resolver" not in s:
+              marker = "import { getSafePreviewUrl } from '../data/db';"
+              if marker not in s:
+                  raise SystemExit('PdfPreviewModal import marker not found')
+              s = s.replace(marker, marker + "\nimport { resolveAttachmentKind, getAttachmentUrl } from '../lib/attachment-resolver';", 1)
+
+          start = s.find('function parseItemType(')
+          end = s.find('\n}\n\nexport default function PdfPreviewModal', start)
+          if start == -1 or end == -1:
+              raise SystemExit('PdfPreviewModal parseItemType block not found')
+          parser = '''function parseItemType(urlOrHtml: string, hintType?: 'pdf' | 'image' | 'html' | 'unknown', nameHint?: string) {
+            if (!urlOrHtml) return { isPdf: false, isImg: false, isHtml: false, targetUrl: '', cleanHtml: '' };
+            const kind = resolveAttachmentKind({ url: urlOrHtml, name: nameHint, type: hintType });
+            if (kind === 'pdf') return { isPdf: true, isImg: false, isHtml: false, targetUrl: getAttachmentUrl({ url: urlOrHtml }), cleanHtml: '' };
+            if (kind === 'image') return { isPdf: false, isImg: true, isHtml: false, targetUrl: getAttachmentUrl({ url: urlOrHtml }), cleanHtml: '' };
+            if (urlOrHtml.trim().startsWith('<')) {
+              const iframe = urlOrHtml.match(/<iframe\\s+[^>]*src=["']([^"']+)["']/i);
+              if (iframe?.[1]) {
+                const nested = resolveAttachmentKind({ url: iframe[1], name: nameHint });
+                if (nested === 'pdf') return { isPdf: true, isImg: false, isHtml: false, targetUrl: iframe[1], cleanHtml: cleanCssText(urlOrHtml) };
+                if (nested === 'image') return { isPdf: false, isImg: true, isHtml: false, targetUrl: iframe[1], cleanHtml: cleanCssText(urlOrHtml) };
+              }
+            }
+            return { isPdf: false, isImg: false, isHtml: true, targetUrl: '', cleanHtml: cleanCssText(urlOrHtml) };
+          }'''
+          s = s[:start] + parser + s[end+2:]
+          s = s.replace(
+              "return parseItemType(source, activeItem.type || content?.fileType);",
+              "return parseItemType(source, activeItem.type || content?.fileType, activeItem.name || activeItem.title || content?.title);"
+          )
+          p.write_text(s, encoding='utf-8')
+
+          # MyRequestsView: classify the initial interactive attachment viewer from name + MIME + URL.
+          p = Path('src/components/MyRequestsView.tsx')
+          s = p.read_text(encoding='utf-8')
+          if "../lib/attachment-resolver" not in s:
+              marker = "import { printHtmlDirectly } from '../utils/pdfGenerator';"
+              if marker not in s:
+                  raise SystemExit('MyRequestsView import marker not found')
+              s = s.replace(marker, marker + "\nimport { resolveAttachmentKind } from '../lib/attachment-resolver';", 1)
+
+          # Replace attachment item type inference wherever the old URL-only test exists.
+          s, n = re.subn(
+              r"type:\s*\(a\.dataUrl\.toLowerCase\(\)\.includes\('\.pdf'\)\s*\|\|\s*a\.dataUrl\.startsWith\('data:application/pdf'\)\)\s*\?\s*'pdf'\s*:\s*'image'",
+              "type: resolveAttachmentKind({ url: a.dataUrl, name: a.name, type: a.type })",
+              s, count=1
+          )
+          if n == 0:
+              print('attachmentList mapping pattern not found; modal normalization remains active')
+
+          # Replace the interactive viewer PDF test if present.
+          pattern = r"const isPdf = attType\.includes\('pdf'\)\s*\|\|\s*attUrl\.startsWith\('data:application/pdf'\)\s*\|\|\s*attUrl\.includes\('\.pdf'\)\s*\|\|\s*attUrl\.startsWith\('jvberi'\);"
+          s, n = re.subn(
+              pattern,
+              "const attachmentKind = resolveAttachmentKind({ url: attUrl, name: currentAtt.name, type: attType });\n    const isPdf = attachmentKind === 'pdf';",
+              s, count=1
+          )
+          if n == 0:
+              print('interactive viewer PDF pattern not found')
+          p.write_text(s, encoding='utf-8')
+
+          # Remove both temporary patch workflows after this final patch is committed.
+          for name in ['.github/workflows/fix-attachment-viewer.yml', '.github/workflows/finish-attachment-viewer.yml']:
+              q = Path(name)
+              if q.exists(): q.unlink()
+          PY
+
+      - name: Validate build
+        run: |
+          npm install --ignore-scripts
+          npm run build
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/attachment-resolver.ts src/lib/pdf-preview.ts src/components/PdfPreviewModal.tsx src/components/MyRequestsView.tsx .github/workflows/fix-attachment-viewer.yml .github/workflows/finish-attachment-viewer.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: complete attachment preview pipeline"
+          git push origin HEAD:main

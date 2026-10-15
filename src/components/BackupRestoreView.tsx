@@ -104,6 +104,7 @@ export default function BackupRestoreView({ currentUser, onRefreshData, themeCol
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
   const [clearConfirmationText, setClearConfirmationText] = useState('');
+  const [clearAdminPassword, setClearAdminPassword] = useState('');
   const [isClearingData, setIsClearingData] = useState(false);
 
   // Verifications results
@@ -839,18 +840,21 @@ export default function BackupRestoreView({ currentUser, onRefreshData, themeCol
     if (!hasAccess || clearConfirmationText !== 'ล้างข้อมูลธุรกรรม') return;
     setIsClearingData(true);
     try {
-      const idToken = await auth.currentUser?.getIdToken();
-      if (!idToken) throw new Error('กรุณาเข้าสู่ระบบใหม่ก่อนดำเนินการ');
       const response = await fetch('/api/admin/clear-transaction-data', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ confirmation: 'ล้างข้อมูลธุรกรรม' })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          confirmation: 'ล้างข้อมูลธุรกรรม',
+          username: currentUser.username || currentUser.email || currentUser.user_id,
+          password: clearAdminPassword
+        })
       });
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.error || 'ไม่สามารถเคลียร์ข้อมูลได้');
       ['okey_requests', 'okey_db_refunds', 'okey_db_deductions', 'okey_db_journal_entries', 'okey_db_accounting_docs'].forEach(key => localStorage.setItem(key, '[]'));
       setShowClearDataConfirm(false);
       setClearConfirmationText('');
+      setClearAdminPassword('');
       showToast('ล้างข้อมูลธุรกรรมสำเร็จ โดยเก็บข้อมูลหลักของระบบไว้', 'success');
       onRefreshData?.();
     } catch (error: any) {
@@ -885,12 +889,14 @@ export default function BackupRestoreView({ currentUser, onRefreshData, themeCol
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
           <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900 p-6 shadow-2xl">
             <div className="flex items-center gap-2 text-rose-600 mb-3"><AlertTriangle className="h-6 w-6" /><h3 className="font-bold">ยืนยันล้างข้อมูลธุรกรรม</h3></div>
-            <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">รายการธุรกรรมที่เลือกจะถูกลบจากฐานข้อมูลส่วนกลางและไม่สามารถย้อนกลับได้ กรุณาสำรองข้อมูลก่อนดำเนินการ</p>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">รายการธุรกรรมที่เลือกจะถูกลบจากฐานข้อมูลส่วนกลางและไม่สามารถย้อนกลับได้ กรุณาสำรองข้อมูลก่อนดำเนินการ และยืนยันด้วยรหัสผ่านแอดมิน</p>
+            <label className="block text-xs font-bold mb-2">รหัสผ่านแอดมิน</label>
+            <input type="password" autoComplete="current-password" value={clearAdminPassword} onChange={e => setClearAdminPassword(e.target.value)} className="w-full rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-3 py-2 text-sm mb-4" placeholder="กรอกรหัสผ่านบัญชีแอดมิน" />
             <label className="block text-xs font-bold mb-2">พิมพ์คำว่า ล้างข้อมูลธุรกรรม เพื่อยืนยัน</label>
             <input value={clearConfirmationText} onChange={e => setClearConfirmationText(e.target.value)} className="w-full rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-3 py-2 text-sm mb-5" placeholder="ล้างข้อมูลธุรกรรม" />
             <div className="flex justify-end gap-2">
-              <button disabled={isClearingData} onClick={() => { setShowClearDataConfirm(false); setClearConfirmationText(''); }} className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800">ยกเลิก</button>
-              <button disabled={isClearingData || clearConfirmationText !== 'ล้างข้อมูลธุรกรรม'} onClick={clearTransactionData} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 disabled:opacity-40">{isClearingData ? 'กำลังล้าง...' : 'ยืนยันลบข้อมูลธุรกรรม'}</button>
+              <button disabled={isClearingData} onClick={() => { setShowClearDataConfirm(false); setClearConfirmationText(''); setClearAdminPassword(''); }} className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800">ยกเลิก</button>
+              <button disabled={isClearingData || clearConfirmationText !== 'ล้างข้อมูลธุรกรรม' || !clearAdminPassword} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 disabled:opacity-40">{isClearingData ? 'กำลังล้าง...' : 'ยืนยันลบข้อมูลธุรกรรม'}</button>
             </div>
           </div>
         </div>

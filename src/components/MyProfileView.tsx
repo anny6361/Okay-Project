@@ -60,6 +60,7 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [signatureImage, setSignatureImage] = useState<string>(currentUser.signatureUrl || '');
+  const [signatureImageError, setSignatureImageError] = useState(false);
 
   // Status logs
   const [errorMsg, setErrorMsg] = useState('');
@@ -81,6 +82,10 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
         img.src = signatureImage;
       }
     }
+  }, [signatureImage]);
+
+  useEffect(() => {
+    setSignatureImageError(false);
   }, [signatureImage]);
 
   // Canvas Handlers
@@ -335,14 +340,21 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
             <p className="text-xs text-slate-400 mb-4">ลายเซ็นของท่านจะปรากฏในรายงาน PDF ที่ผ่านการอนุมัติความถูกต้อง</p>
             
             <div className="border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-950 p-4 h-32 flex items-center justify-center overflow-hidden">
-              {signatureImage ? (
-                <img 
-                  src={signatureImage} 
-                  className="max-h-24 max-w-full object-contain" 
-                  alt="Current Signature" 
+              {signatureImage && !signatureImageError ? (
+                <img
+                  src={signatureImage}
+                  className="max-h-24 max-w-full object-contain"
+                  alt="ลายมือชื่อปัจจุบัน"
+                  referrerPolicy="no-referrer"
+                  onError={() => setSignatureImageError(true)}
                 />
+              ) : signatureImage ? (
+                <div className="text-center">
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">โหลดภาพลายมือชื่อเดิมไม่ได้ กรุณาลงลายมือชื่อใหม่หรืออัปโหลดไฟล์ PNG/JPG</p>
+                  <a href={signatureImage} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline">เปิดไฟล์ลายมือชื่อที่บันทึกไว้</a>
+                </div>
               ) : (
-                <span className="text-xs text-slate-400 font-mono">ไม่มีลายมือชื่อบันทึกในฐานข้อมูล</span>
+                <span className="text-xs text-slate-400 font-mono">ไม่มีลายมือชื่อบันทึกในฐานข้อมูล กรุณาลงลายมือชื่อหรืออัปโหลดไฟล์</span>
               )}
             </div>
           </div>

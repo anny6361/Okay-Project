@@ -162,8 +162,12 @@ export default function DocumentPdfManagerView() {
     const companyEmail = companyData?.email || 'finance@okay.com';
 
     // Find requester user details & signature from registered profiles
-    const requesterUser = users.find(u => u.name === selectedRequest.employeeName || u.user_id === selectedRequest.created_by) || users[1];
-    const requesterSig = requesterUser?.signatureUrl || 'https://upload.wikimedia.org/wikipedia/commons/3/3a/Jon_Foreman_Signature.png';
+    const requesterUser = users.find(u =>
+      (!!selectedRequest.created_by && u.user_id === selectedRequest.created_by) ||
+      (!!selectedRequest.user_id && u.user_id === selectedRequest.user_id) ||
+      (u.name || '').trim().toLocaleLowerCase() === (selectedRequest.employeeName || '').trim().toLocaleLowerCase()
+    );
+    const requesterSig = requesterUser?.signatureUrl || '';
 
     // Resolve all attachments as real images for the PDF
     const allAttachments = getAllRequestAttachments(selectedRequest);
@@ -189,7 +193,7 @@ export default function DocumentPdfManagerView() {
       
       // Map signature cards with registered signature images or pending placeholder
       const pdfReplacementLevelsHtml = selectedRequest.approvalHistory.map((step, idx) => {
-        const matchingUser = users.find(u => u.name === step.approverName);
+        const matchingUser = users.find(u => (u.name || '').trim().toLocaleLowerCase() === (step.approverName || '').trim().toLocaleLowerCase());
         const userSig = matchingUser?.signatureUrl;
         const isApproved = step.status === 'approved';
 
@@ -511,7 +515,7 @@ export default function DocumentPdfManagerView() {
                 <!-- ผู้ขอเบิกจ่าย card -->
                 <div style="flex: 1; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; text-align: center; font-size: 10px; background-color: #f8fafc; display: flex; flex-direction: column; justify-content: space-between; min-height: 115px; box-sizing: border-box;">
                   <p style="font-weight: bold; margin: 0 0 4px 0; color: #1e293b; font-size: 10px; text-transform: uppercase;">ผู้ขอเบิกเงิน (Claimant)</p>
-                  <img src="${requesterSig}" style="height: 38px; max-width: 90%; object-fit: contain; margin: 4px auto; display: block;" alt="Claimant Signature" />
+                  ${requesterSig ? `<img src="${requesterSig}" style="height: 38px; max-width: 90%; object-fit: contain; margin: 4px auto; display: block;" alt="Claimant Signature" />` : `<div style="height: 38px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 9px;">ยังไม่ได้บันทึกลายมือชื่อ</div>`}
                   <div>
                     <p style="font-weight: 600; margin: 4px 0 2px 0; font-size: 11px; color: #1e293b;">${selectedRequest.employeeName}</p>
                     <p style="color: #3b82f6; font-weight: bold; margin: 0; font-size: 8px;">✓ SUBMITTED</p>
@@ -571,7 +575,7 @@ export default function DocumentPdfManagerView() {
 
     // Map signature cards with registered signature images or pending placeholder
     const pdfStandardLevelsHtml = selectedRequest.approvalHistory.map((step, idx) => {
-      const matchingUser = users.find(u => u.name === step.approverName);
+      const matchingUser = users.find(u => (u.name || '').trim().toLocaleLowerCase() === (step.approverName || '').trim().toLocaleLowerCase());
       const userSig = matchingUser?.signatureUrl;
       const isApproved = step.status === 'approved';
 
@@ -1019,7 +1023,7 @@ export default function DocumentPdfManagerView() {
               <!-- ผู้ขอเบิกจ่าย card -->
               <div style="flex: 1; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; text-align: center; font-size: 10px; background-color: #f8fafc; display: flex; flex-direction: column; justify-content: space-between; min-height: 115px; box-sizing: border-box;">
                 <p style="font-weight: bold; margin: 0 0 4px 0; color: #1e293b; font-size: 10px; text-transform: uppercase;">ผู้ขอเบิกเงิน (Claimant)</p>
-                <img src="${requesterSig}" style="height: 38px; max-width: 90%; object-fit: contain; margin: 4px auto; display: block;" alt="Claimant Signature" />
+                ${requesterSig ? `<img src="${requesterSig}" style="height: 38px; max-width: 90%; object-fit: contain; margin: 4px auto; display: block;" alt="Claimant Signature" />` : `<div style="height: 38px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 9px;">ยังไม่ได้บันทึกลายมือชื่อ</div>`}
                 <div>
                   <p style="font-weight: 600; margin: 4px 0 2px 0; font-size: 11px; color: #1e293b;">${selectedRequest.employeeName}</p>
                   <p style="color: #3b82f6; font-weight: bold; margin: 0; font-size: 8px;">✓ SUBMITTED</p>
@@ -1511,8 +1515,12 @@ export default function DocumentPdfManagerView() {
               const settlement = getSettlementDetails(selectedRequest);
               
               // Resolve requester details & signature
-              const requesterUser = users.find(u => u.name === selectedRequest.employeeName || u.user_id === selectedRequest.created_by) || users[1];
-              const requesterSig = requesterUser?.signatureUrl || 'https://upload.wikimedia.org/wikipedia/commons/3/3a/Jon_Foreman_Signature.png';
+              const requesterUser = users.find(u =>
+                (!!selectedRequest.created_by && u.user_id === selectedRequest.created_by) ||
+                (!!selectedRequest.user_id && u.user_id === selectedRequest.user_id) ||
+                (u.name || '').trim().toLocaleLowerCase() === (selectedRequest.employeeName || '').trim().toLocaleLowerCase()
+              );
+              const requesterSig = requesterUser?.signatureUrl || '';
 
               // Fetch compiled attachments
               const compiledAttachments = getAllRequestAttachments(selectedRequest);
@@ -1666,12 +1674,17 @@ export default function DocumentPdfManagerView() {
                       <div className="p-3 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 flex flex-col justify-between min-h-[120px] shadow-xs">
                         <span className="font-bold text-slate-500 uppercase text-[9px]">ผู้ขอเบิกเงิน (Claimant)</span>
                         <div className="flex justify-center items-center h-12 my-1">
-                          <img 
-                            src={requesterSig} 
-                            className="max-h-10 max-w-[90px] object-contain mix-blend-multiply" 
-                            alt="claimant signature" 
-                            referrerPolicy="no-referrer"
-                          />
+                          {requesterSig ? (
+                            <img
+                              src={requesterSig}
+                              className="max-h-10 max-w-[90px] object-contain"
+                              alt="ลายมือชื่อผู้ขอเบิก"
+                              referrerPolicy="no-referrer"
+                              onError={e => { e.currentTarget.style.display = 'none'; }}
+                            />
+                          ) : (
+                            <span className="text-[9px] text-slate-400">ยังไม่ได้บันทึกลายมือชื่อ</span>
+                          )}
                         </div>
                         <div>
                           <p className="font-black text-slate-800 dark:text-slate-100 leading-tight">{selectedRequest.employeeName}</p>
@@ -1681,7 +1694,7 @@ export default function DocumentPdfManagerView() {
 
                       {/* Approval Chain history cards */}
                       {selectedRequest.approvalHistory.map((step, idx) => {
-                        const matchingUser = users.find(u => u.name === step.approverName);
+                        const matchingUser = users.find(u => (u.name || '').trim().toLocaleLowerCase() === (step.approverName || '').trim().toLocaleLowerCase());
                         const userSig = matchingUser?.signatureUrl;
                         const isApproved = step.status === 'approved';
 

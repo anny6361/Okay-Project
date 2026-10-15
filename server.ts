@@ -3,7 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
-import { adminDb } from "./src/lib/firebase-admin.ts";
+import { adminDb, adminAuth } from "./src/lib/firebase-admin.ts";
 
 dotenv.config();
 
@@ -90,6 +90,52 @@ app.post('/api/sync', async (req, res) => {
   }
 });
 // ------------------------------------------------------------------------
+
+// Admin-only destructive operation: clear transaction records while preserving system masters.
+app.post('/api/admin/clear-transaction-data', async (req, res) => {
+  try {
+    if (req.body?.confirmation !== 'ล้างข้อมูลธุรกรรม') {
+      return res.status(400).json({ success: false, error: 'คำยืนยันไม่ถูกต้อง' });
+    }
+    const authHeader = req.headers.authorization || '';
+    const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (!tokenMatch) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบใหม่' });
+
+    const decoded = await adminAuth.verifyIdToken(tokenMatch[1]);
+    const userDoc = await adminDb.collection('okey_erp').doc('okey_db_users').get();
+    const users = userDoc.data()?.items;
+    const user = Array.isArray(users) ? users.find((item: any) =>
+      String(item.email || '').toLowerCase() === String(decoded.email || '').toLowerCase()
+    ) : null;
+
+    if (!user || user.is_active === false ||
+        !(user.approval_level === 'Administrator' || user.approval_level === 'Executive' || user.role === 'Executive')) {
+      return res.status(403).json({ success: false, error: 'เฉพาะผู้ดูแลระบบหรือผู้บริหารเท่านั้นที่ดำเนินการนี้ได้' });
+    }
+
+    const transactionCollections = [
+      'okey_requests',
+      'okey_db_refunds',
+      'okey_db_deductions',
+      'okey_db_journal_entries',
+      'okey_db_accounting_docs'
+    ];
+    await Promise.all(transactionCollections.map(async (collection) => {
+      await adminDb.collection('okey_erp').doc(collection).set({ items: [] }, { merge: true });
+      notifyClients(collection, []);
+    }));
+
+    console.warn('[ADMIN CLEAR TRANSACTIONS]', JSON.stringify({
+      operator: user.user_id || user.email || decoded.uid,
+      at: new Date().toISOString(),
+      collections: transactionCollections
+    }));
+    return res.json({ success: true, clearedCollections: transactionCollections });
+  } catch (error: any) {
+    console.error('Clear transaction data error:', error);
+    return res.status(500).json({ success: false, error: 'ไม่สามารถล้างข้อมูลธุรกรรมได้ กรุณาตรวจสอบสิทธิ์และการตั้งค่าระบบ' });
+  }
+});
 
 // Lazily get Gemini Client to prevent crash on startup if GEMINI_API_KEY is missing
 let aiClient: GoogleGenAI | null = null;

@@ -30,6 +30,7 @@ import {
   Cloud
 } from 'lucide-react';
 import { UserProfile } from '../types';
+import { auth } from '../firebase';
 import { addEnterpriseAuditLog } from '../data/db';
 import JSZip from 'jszip';
 import ExcelJS from 'exceljs';
@@ -101,6 +102,9 @@ export default function BackupRestoreView({ currentUser, onRefreshData, themeCol
   const [isDragActive, setIsDragActive] = useState<boolean>(false);
   const [showConfirmRestore, setShowConfirmRestore] = useState<boolean>(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [showClearDataConfirm, setShowClearDataConfirm] = useState(false);
+  const [clearConfirmationText, setClearConfirmationText] = useState('');
+  const [isClearingData, setIsClearingData] = useState(false);
 
   // Verifications results
   const [verificationResult, setVerificationResult] = useState<{
@@ -830,6 +834,32 @@ export default function BackupRestoreView({ currentUser, onRefreshData, themeCol
     }
   };
 
+  // Clear transactional records only; preserve users, employees, settings, master data and backups.
+  const clearTransactionData = async () => {
+    if (!hasAccess || clearConfirmationText !== 'ล้างข้อมูลธุรกรรม') return;
+    setIsClearingData(true);
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error('กรุณาเข้าสู่ระบบใหม่ก่อนดำเนินการ');
+      const response = await fetch('/api/admin/clear-transaction-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ confirmation: 'ล้างข้อมูลธุรกรรม' })
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error || 'ไม่สามารถเคลียร์ข้อมูลได้');
+      ['okey_requests', 'okey_db_refunds', 'okey_db_deductions', 'okey_db_journal_entries', 'okey_db_accounting_docs'].forEach(key => localStorage.setItem(key, '[]'));
+      setShowClearDataConfirm(false);
+      setClearConfirmationText('');
+      showToast('ล้างข้อมูลธุรกรรมสำเร็จ โดยเก็บข้อมูลหลักของระบบไว้', 'success');
+      onRefreshData?.();
+    } catch (error: any) {
+      showToast(error?.message || 'ล้างข้อมูลไม่สำเร็จ', 'error');
+    } finally {
+      setIsClearingData(false);
+    }
+  };
+
   // Retention Policy changes persistence
   const saveRetentionPolicy = (days: number, weeks: number, months: number) => {
     const policy = { days, weeks, months };
@@ -839,6 +869,32 @@ export default function BackupRestoreView({ currentUser, onRefreshData, themeCol
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto text-slate-800 dark:text-slate-100 font-sans">
+      {hasAccess && (
+        <section className="rounded-2xl border border-rose-200 dark:border-rose-900 bg-rose-50/70 dark:bg-rose-950/20 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex gap-3 items-start">
+            <div className="p-2 rounded-xl bg-rose-100 dark:bg-rose-900/50 text-rose-600"><Trash2 className="h-5 w-5" /></div>
+            <div>
+              <h3 className="font-bold text-sm text-rose-800 dark:text-rose-300">ล้างข้อมูลธุรกรรม</h3>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">ลบคำขอเบิกจ่าย เงินทดรอง/เคลียร์เงินทดรอง และรายการบัญชีที่เกี่ยวข้อง โดยเก็บข้อมูลผู้ใช้ พนักงาน งบประมาณ การตั้งค่า ข้อมูลหลัก และประวัติสำรองไว้</p>
+            </div>
+          </div>
+          <button onClick={() => setShowClearDataConfirm(true)} className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm"><Trash2 className="h-4 w-4" /> ล้างข้อมูล</button>
+        </section>
+      )}
+      {showClearDataConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900 p-6 shadow-2xl">
+            <div className="flex items-center gap-2 text-rose-600 mb-3"><AlertTriangle className="h-6 w-6" /><h3 className="font-bold">ยืนยันล้างข้อมูลธุรกรรม</h3></div>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mb-3">รายการธุรกรรมที่เลือกจะถูกลบจากฐานข้อมูลส่วนกลางและไม่สามารถย้อนกลับได้ กรุณาสำรองข้อมูลก่อนดำเนินการ</p>
+            <label className="block text-xs font-bold mb-2">พิมพ์คำว่า ล้างข้อมูลธุรกรรม เพื่อยืนยัน</label>
+            <input value={clearConfirmationText} onChange={e => setClearConfirmationText(e.target.value)} className="w-full rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-3 py-2 text-sm mb-5" placeholder="ล้างข้อมูลธุรกรรม" />
+            <div className="flex justify-end gap-2">
+              <button disabled={isClearingData} onClick={() => { setShowClearDataConfirm(false); setClearConfirmationText(''); }} className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800">ยกเลิก</button>
+              <button disabled={isClearingData || clearConfirmationText !== 'ล้างข้อมูลธุรกรรม'} onClick={clearTransactionData} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 disabled:opacity-40">{isClearingData ? 'กำลังล้าง...' : 'ยืนยันลบข้อมูลธุรกรรม'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Toast Notification Banner */}
       {toast && (

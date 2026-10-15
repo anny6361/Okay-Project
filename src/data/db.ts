@@ -231,6 +231,15 @@ export function getDbUsers(): UserProfile[] {
       }
 
       const enriched = parsed.map((u: UserProfile) => {
+        // Remove obsolete demo signature URLs that point to a missing Wikimedia proxy file.
+        // Users can then upload or draw their own real signature from My Profile.
+        if (
+          typeof u.signatureUrl === 'string' &&
+          /John_F\._Kennedy_Signature|wikipedia-commons-local-public/i.test(u.signatureUrl)
+        ) {
+          u.signatureUrl = '';
+          modified = true;
+        }
         if (u.username === 'Okay9999') {
           if (u.role !== 'Administrator' || u.approval_level !== 'Administrator' || u.is_active !== true || u.employmentStatus !== 'active') {
             u.role = 'Administrator';

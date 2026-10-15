@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createServer as createViteServer } from "vite";
 import { adminDb, adminAuth } from "./src/lib/firebase-admin.ts";
+import { compareSync } from "bcryptjs";
 
 dotenv.config();
 
@@ -91,26 +92,41 @@ app.post('/api/sync', async (req, res) => {
 });
 // ------------------------------------------------------------------------
 
-// Admin-only destructive operation: clear transaction records while preserving system masters.
+// Admin-only destructive operation. Re-authenticate with the app account password
+// because some legacy app sessions do not have a Firebase Auth user/token.
 app.post('/api/admin/clear-transaction-data', async (req, res) => {
   try {
-    if (req.body?.confirmation !== 'ล้างข้อมูลธุรกรรม') {
+    const { confirmation, username, password } = req.body || {};
+    if (confirmation !== 'ล้างข้อมูลธุรกรรม') {
       return res.status(400).json({ success: false, error: 'คำยืนยันไม่ถูกต้อง' });
     }
-    const authHeader = req.headers.authorization || '';
-    const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
-    if (!tokenMatch) return res.status(401).json({ success: false, error: 'กรุณาเข้าสู่ระบบใหม่' });
+    if (typeof username !== 'string' || !username.trim() || typeof password !== 'string' || !password) {
+      return res.status(401).json({ success: false, error: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่านเพื่อยืนยันสิทธิ์แอดมิน' });
+    }
 
-    const decoded = await adminAuth.verifyIdToken(tokenMatch[1]);
     const userDoc = await adminDb.collection('okey_erp').doc('okey_db_users').get();
     const users = userDoc.data()?.items;
+    const normalizedUsername = username.trim().toLowerCase();
     const user = Array.isArray(users) ? users.find((item: any) =>
-      String(item.email || '').toLowerCase() === String(decoded.email || '').toLowerCase()
+      [item.username, item.email, item.user_id, item.employee_id]
+        .some(value => typeof value === 'string' && value.trim().toLowerCase() === normalizedUsername)
     ) : null;
 
-    if (!user || user.is_active === false ||
+    if (!user || user.is_active === false || user.deleted ||
         !(user.approval_level === 'Administrator' || user.approval_level === 'Executive' || user.role === 'Executive')) {
-      return res.status(403).json({ success: false, error: 'เฉพาะผู้ดูแลระบบหรือผู้บริหารเท่านั้นที่ดำเนินการนี้ได้' });
+      return res.status(403).json({ success: false, error: 'บัญชีนี้ไม่มีสิทธิ์ล้างข้อมูลธุรกรรม' });
+    }
+
+    const storedPassword = String(user.password || user.password_hash || '');
+    let passwordMatches = false;
+    if (storedPassword.startsWith('$2a$') || storedPassword.startsWith('$2b$') || storedPassword.startsWith('$2y$')) {
+      try { passwordMatches = compareSync(password.trim(), storedPassword); } catch { passwordMatches = false; }
+    } else {
+      // Compatibility for legacy accounts that still store a plain-text password.
+      passwordMatches = storedPassword.length > 0 && password === storedPassword;
+    }
+    if (!passwordMatches) {
+      return res.status(401).json({ success: false, error: 'รหัสผ่านไม่ถูกต้อง ไม่ได้ล้างข้อมูล' });
     }
 
     const transactionCollections = [
@@ -126,14 +142,14 @@ app.post('/api/admin/clear-transaction-data', async (req, res) => {
     }));
 
     console.warn('[ADMIN CLEAR TRANSACTIONS]', JSON.stringify({
-      operator: user.user_id || user.email || decoded.uid,
+      operator: user.user_id || user.email || user.username,
       at: new Date().toISOString(),
       collections: transactionCollections
     }));
     return res.json({ success: true, clearedCollections: transactionCollections });
   } catch (error: any) {
     console.error('Clear transaction data error:', error);
-    return res.status(500).json({ success: false, error: 'ไม่สามารถล้างข้อมูลธุรกรรมได้ กรุณาตรวจสอบสิทธิ์และการตั้งค่าระบบ' });
+    return res.status(500).json({ success: false, error: 'ไม่สามารถล้างข้อมูลธุรกรรมได้ กรุณาลองใหม่ภายหลัง' });
   }
 });
 

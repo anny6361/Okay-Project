@@ -145,7 +145,7 @@ export const INITIAL_USERS: UserProfile[] = [
     is_active: true,
     approval_level: 'Administrator',
     force_password_change: true,
-    signatureUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c5/John_F._Kennedy_Signature.png',
+    signatureUrl: '',
     title: 'นาย',
     firstName: 'Super',
     lastName: 'Administrator',
@@ -245,10 +245,6 @@ export function getDbUsers(): UserProfile[] {
         if (match) {
           if (!u.phone) {
             u.phone = match.phone;
-            modified = true;
-          }
-          if (!u.signatureUrl) {
-            u.signatureUrl = match.signatureUrl;
             modified = true;
           }
           if (!u.password) {

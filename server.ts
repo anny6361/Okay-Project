@@ -92,8 +92,7 @@ app.post('/api/sync', async (req, res) => {
 });
 // ------------------------------------------------------------------------
 
-// Admin-only destructive operation. Re-authenticate with the app account password
-// because some legacy app sessions do not have a Firebase Auth user/token.
+// Admin-only destructive operation. Clear both the legacy store and the active normalized Firestore collections.
 app.post('/api/admin/clear-transaction-data', async (req, res) => {
   try {
     const { confirmation, username, password } = req.body || {};
@@ -104,16 +103,24 @@ app.post('/api/admin/clear-transaction-data', async (req, res) => {
       return res.status(401).json({ success: false, error: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่านเพื่อยืนยันสิทธิ์แอดมิน' });
     }
 
-    const userDoc = await adminDb.collection('okey_erp').doc('okey_db_users').get();
-    const users = userDoc.data()?.items;
     const normalizedUsername = username.trim().toLowerCase();
-    const user = Array.isArray(users) ? users.find((item: any) =>
+    const [legacyUserDoc, currentUsersSnapshot] = await Promise.all([
+      adminDb.collection('okey_erp').doc('okey_db_users').get(),
+      adminDb.collection('users').get()
+    ]);
+    const legacyUsers = legacyUserDoc.data()?.items;
+    const candidates = [
+      ...(Array.isArray(legacyUsers) ? legacyUsers : []),
+      ...currentUsersSnapshot.docs.map((doc: any) => doc.data())
+    ];
+    const user = candidates.find((item: any) =>
       [item.username, item.email, item.user_id, item.employee_id]
         .some(value => typeof value === 'string' && value.trim().toLowerCase() === normalizedUsername)
-    ) : null;
+    );
 
     if (!user || user.is_active === false || user.deleted ||
-        !(user.approval_level === 'Administrator' || user.approval_level === 'Executive' || user.role === 'Executive')) {
+        !(user.approval_level === 'Administrator' || user.approval_level === 'Executive' ||
+          user.role === 'Administrator' || user.role === 'Executive')) {
       return res.status(403).json({ success: false, error: 'บัญชีนี้ไม่มีสิทธิ์ล้างข้อมูลธุรกรรม' });
     }
 
@@ -122,31 +129,55 @@ app.post('/api/admin/clear-transaction-data', async (req, res) => {
     if (storedPassword.startsWith('$2a$') || storedPassword.startsWith('$2b$') || storedPassword.startsWith('$2y$')) {
       try { passwordMatches = compareSync(password.trim(), storedPassword); } catch { passwordMatches = false; }
     } else {
-      // Compatibility for legacy accounts that still store a plain-text password.
       passwordMatches = storedPassword.length > 0 && password === storedPassword;
     }
     if (!passwordMatches) {
       return res.status(401).json({ success: false, error: 'รหัสผ่านไม่ถูกต้อง ไม่ได้ล้างข้อมูล' });
     }
 
+    // These are transaction-only collections. User, employee, department, budget,
+    // company settings, master data, audit logs and backup history are intentionally preserved.
     const transactionCollections = [
+      'expenseRequests',
+      'advanceRequests',
+      'advanceClearings',
+      'refunds',
+      'deductions',
+      'journalEntries',
+      'reports'
+    ];
+    const deletedCounts: Record<string, number> = {};
+
+    for (const collectionName of transactionCollections) {
+      const snapshot = await adminDb.collection(collectionName).get();
+      deletedCounts[collectionName] = snapshot.size;
+      for (let start = 0; start < snapshot.docs.length; start += 450) {
+        const batch = adminDb.batch();
+        snapshot.docs.slice(start, start + 450).forEach((record: any) => batch.delete(record.ref));
+        await batch.commit();
+      }
+    }
+
+    // Also empty legacy arrays, which older clients may still read.
+    const legacyKeys = [
       'okey_requests',
       'okey_db_refunds',
       'okey_db_deductions',
       'okey_db_journal_entries',
       'okey_db_accounting_docs'
     ];
-    await Promise.all(transactionCollections.map(async (collection) => {
-      await adminDb.collection('okey_erp').doc(collection).set({ items: [] }, { merge: true });
-      notifyClients(collection, []);
+    await Promise.all(legacyKeys.map(async (key) => {
+      await adminDb.collection('okey_erp').doc(key).set({ items: [] }, { merge: true });
+      notifyClients(key, []);
     }));
 
     console.warn('[ADMIN CLEAR TRANSACTIONS]', JSON.stringify({
       operator: user.user_id || user.email || user.username,
       at: new Date().toISOString(),
-      collections: transactionCollections
+      deletedCounts,
+      legacyKeys
     }));
-    return res.json({ success: true, clearedCollections: transactionCollections });
+    return res.json({ success: true, clearedCollections: [...transactionCollections, ...legacyKeys], deletedCounts });
   } catch (error: any) {
     console.error('Clear transaction data error:', error);
     return res.status(500).json({ success: false, error: 'ไม่สามารถล้างข้อมูลธุรกรรมได้ กรุณาลองใหม่ภายหลัง' });

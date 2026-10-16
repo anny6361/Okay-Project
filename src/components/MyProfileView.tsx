@@ -100,15 +100,29 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
 
     setIsUploadingSignature(true);
     try {
-      const uploadedUrl = await uploadToStorage(
+      const uploadPromise = uploadToStorage(
         'signatures/' + currentUser.user_id + '_' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_'),
         file
       );
 
-      // A data URL means Firebase Storage upload failed and the helper returned a local fallback.
-      // Do not save that as a permanent signature because it may break PDF generation.
+      // Prevent the upload control from remaining in "uploading" state forever
+      // if Firebase Storage is blocked or its request never settles.
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error('อัปโหลดใช้เวลานานเกินกำหนด: Firebase Storage ไม่ตอบสนอง'));
+        }, 25000);
+      });
+
+      let uploadedUrl: string;
+      try {
+        uploadedUrl = await Promise.race([uploadPromise, timeoutPromise]);
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
+
       if (!uploadedUrl || uploadedUrl.startsWith('data:')) {
-        throw new Error('Firebase Storage upload did not return a permanent URL');
+        throw new Error('Firebase Storage ไม่ได้ส่ง URL ของไฟล์กลับมา');
       }
 
       setSignatureImage(uploadedUrl);
@@ -116,7 +130,10 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
       setSuccessMsg('อัปโหลดลายเซ็นสำเร็จแล้ว กรุณากด “บันทึกข้อมูลส่วนตัวของฉัน” เพื่อบันทึก');
     } catch (error) {
       console.error('Signature upload failed:', error);
-      setErrorMsg('อัปโหลดลายเซ็นไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อ แล้วลองใหม่อีกครั้ง');
+      const detail = error instanceof Error ? error.message : '';
+      setErrorMsg(detail.includes('นานเกินกำหนด')
+        ? 'อัปโหลดไม่สำเร็จ: ระบบจัดเก็บ Firebase ไม่ตอบสนองภายใน 25 วินาที กรุณาลองใหม่ หากยังเกิดซ้ำต้องตรวจสอบ Firebase Storage/สิทธิ์การอัปโหลด'
+        : 'อัปโหลดลายเซ็นไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อหรือสิทธิ์ Firebase Storage แล้วลองใหม่อีกครั้ง');
     } finally {
       setIsUploadingSignature(false);
       input.value = '';

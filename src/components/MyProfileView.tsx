@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { uploadToStorage } from '../lib/storage';
 import { 
   User, 
@@ -58,6 +58,9 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
   const [signatureImage, setSignatureImage] = useState<string>(currentUser.signatureUrl || '');
   const [signatureImageError, setSignatureImageError] = useState(false);
   const [isUploadingSignature, setIsUploadingSignature] = useState(false);
+  const signatureCanvasRef = useRef<HTMLCanvasElement>(null);
+  const isDrawingSignatureRef = useRef(false);
+  const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
 
   // Status logs
   const [errorMsg, setErrorMsg] = useState('');
@@ -77,6 +80,92 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
       
     });
     }
+  };
+
+  const getOptimizedSignatureDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('อ่านไฟล์ภาพลายเซ็นไม่สำเร็จ'));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('ไฟล์ภาพลายเซ็นไม่ถูกต้อง'));
+      image.onload = () => {
+        const maxWidth = 1200;
+        const maxHeight = 400;
+        const scale = Math.min(1, maxWidth / image.width, maxHeight / image.height);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext('2d');
+        if (!context) {
+          reject(new Error('เบราว์เซอร์ไม่รองรับการอ่านภาพลายเซ็น'));
+          return;
+        }
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      image.src = String(reader.result || '');
+    };
+    reader.readAsDataURL(file);
+  });
+
+  const getCanvasPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = event.currentTarget;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * (canvas.width / rect.width),
+      y: (event.clientY - rect.top) * (canvas.height / rect.height)
+    };
+  };
+
+  const startSignatureDrawing = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = event.currentTarget;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    const point = getCanvasPoint(event);
+    context.lineWidth = 4;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.strokeStyle = '#111827';
+    context.beginPath();
+    context.moveTo(point.x, point.y);
+    isDrawingSignatureRef.current = true;
+    setHasDrawnSignature(true);
+    canvas.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  };
+
+  const continueSignatureDrawing = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawingSignatureRef.current) return;
+    const context = event.currentTarget.getContext('2d');
+    if (!context) return;
+    const point = getCanvasPoint(event);
+    context.lineTo(point.x, point.y);
+    context.stroke();
+    event.preventDefault();
+  };
+
+  const stopSignatureDrawing = () => {
+    isDrawingSignatureRef.current = false;
+  };
+
+  const clearSignatureCanvas = () => {
+    const canvas = signatureCanvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (canvas && context) context.clearRect(0, 0, canvas.width, canvas.height);
+    setHasDrawnSignature(false);
+  };
+
+  const useDrawnSignature = () => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas || !hasDrawnSignature) {
+      setErrorMsg('กรุณาเซ็นชื่อในกรอบก่อน แล้วกดใช้ลายเซ็นนี้');
+      return;
+    }
+    setSignatureImage(canvas.toDataURL('image/png'));
+    setSignatureImageError(false);
+    setErrorMsg('');
+    setSuccessMsg('รับลายเซ็นแล้ว กรุณากด “บันทึกข้อมูลส่วนตัวของฉัน” เพื่อบันทึก');
   };
 
   const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -100,9 +189,13 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
 
     setIsUploadingSignature(true);
     try {
+      // Normalize and shrink the image before upload. If Firebase Storage is unavailable,
+      // uploadToStorage returns this compact data URL so the signature can still be saved
+      // with the user's profile instead of being rejected.
+      const optimizedDataUrl = await getOptimizedSignatureDataUrl(file);
       const uploadPromise = uploadToStorage(
-        'signatures/' + currentUser.user_id + '_' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_'),
-        file
+        'signatures/' + currentUser.user_id + '_' + Date.now() + '.png',
+        optimizedDataUrl
       );
 
       // Prevent the upload control from remaining in "uploading" state forever
@@ -121,13 +214,15 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
         if (timeoutId) clearTimeout(timeoutId);
       }
 
-      if (!uploadedUrl || uploadedUrl.startsWith('data:')) {
-        throw new Error('Firebase Storage ไม่ได้ส่ง URL ของไฟล์กลับมา');
+      if (!uploadedUrl) {
+        throw new Error('ระบบไม่สามารถอ่านภาพลายเซ็นที่เลือกได้');
       }
 
       setSignatureImage(uploadedUrl);
       setSignatureImageError(false);
-      setSuccessMsg('อัปโหลดลายเซ็นสำเร็จแล้ว กรุณากด “บันทึกข้อมูลส่วนตัวของฉัน” เพื่อบันทึก');
+      setSuccessMsg(uploadedUrl.startsWith('data:')
+        ? 'รับภาพลายเซ็นแล้ว (บันทึกในข้อมูลส่วนตัว) กรุณากด “บันทึกข้อมูลส่วนตัวของฉัน” เพื่อบันทึก'
+        : 'อัปโหลดลายเซ็นสำเร็จแล้ว กรุณากด “บันทึกข้อมูลส่วนตัวของฉัน” เพื่อบันทึก');
     } catch (error) {
       console.error('Signature upload failed:', error);
       const detail = error instanceof Error ? error.message : '';
@@ -610,32 +705,56 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
               </div>
             </div>
 
-            {/* Upload-only signature control */}
+            {/* Draw or upload a signature */}
             <div className="border-t border-slate-100 dark:border-slate-800 pt-5 space-y-4">
               <h4 className="text-xs font-extrabold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <ImageIcon className="h-4 w-4 text-emerald-600" />
-                <span>อัปโหลดภาพลายเซ็นเท่านั้น</span>
+                <span>ลงลายมือชื่อทันที หรืออัปโหลดภาพลายเซ็น</span>
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                ใช้ไฟล์ PNG หรือ JPG พื้นหลังโปร่งใสแนะนำ ขนาดไม่เกิน 2MB เมื่ออัปโหลดสำเร็จให้กดบันทึกข้อมูลส่วนตัว
+                ใช้นิ้วบนมือถือหรือเมาส์บนคอมพิวเตอร์เซ็นในกรอบด้านล่าง แล้วกด “ใช้ลายเซ็นนี้” หรือเลือกไฟล์ PNG/JPG ขนาดไม่เกิน 2MB
               </p>
-              <label className={`inline-flex items-center gap-2 rounded-xl px-4 py-3 text-xs font-bold cursor-pointer border border-primary-200 dark:border-primary-800 ${isUploadingSignature ? 'opacity-60 cursor-wait' : 'hover:bg-primary-50 dark:hover:bg-primary-950/30'}`}>
-                <ImageIcon className="h-4 w-4" />
-                <span>{isUploadingSignature ? 'กำลังอัปโหลดลายเซ็น…' : 'เลือกไฟล์ภาพลายเซ็น (PNG/JPG)'}</span>
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg"
-                  onChange={handleSignatureUpload}
-                  disabled={isUploadingSignature}
-                  className="hidden"
+              <div className="overflow-hidden rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-white">
+                <canvas
+                  ref={signatureCanvasRef}
+                  width={900}
+                  height={240}
+                  aria-label="กรอบสำหรับเซ็นลายมือชื่อ"
+                  className="block w-full h-36 sm:h-44 touch-none cursor-crosshair"
+                  style={{ touchAction: 'none' }}
+                  onPointerDown={startSignatureDrawing}
+                  onPointerMove={continueSignatureDrawing}
+                  onPointerUp={stopSignatureDrawing}
+                  onPointerCancel={stopSignatureDrawing}
+                  onPointerLeave={stopSignatureDrawing}
                 />
-              </label>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={clearSignatureCanvas} className="rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800">
+                  ล้างลายเซ็น
+                </button>
+                <button type="button" onClick={useDrawnSignature} disabled={!hasDrawnSignature} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
+                  ใช้ลายเซ็นนี้
+                </button>
+                <label className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold cursor-pointer border border-primary-200 dark:border-primary-800 ${isUploadingSignature ? 'opacity-60 cursor-wait' : 'hover:bg-primary-50 dark:hover:bg-primary-950/30'}`}>
+                  <ImageIcon className="h-4 w-4" />
+                  <span>{isUploadingSignature ? 'กำลังอ่านภาพ…' : 'เลือกไฟล์ PNG/JPG'}</span>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={handleSignatureUpload}
+                    disabled={isUploadingSignature}
+                    className="hidden"
+                  />
+                </label>
+              </div>
               {signatureImage && !signatureImageError && (
                 <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
                   <p className="text-[11px] text-slate-500 mb-2">ตัวอย่างลายเซ็นที่จะบันทึก</p>
                   <img src={signatureImage} alt="ตัวอย่างลายเซ็น" className="max-h-20 max-w-full object-contain" />
                 </div>
               )}
+              <p className="text-[11px] text-slate-500">หลังเซ็นหรือเลือกไฟล์แล้ว ต้องกด “บันทึกข้อมูลส่วนตัวของฉัน” ด้านล่าง เพื่อบันทึกลงบัญชี</p>
             </div>
 
             {/* Form actions */}

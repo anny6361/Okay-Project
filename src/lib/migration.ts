@@ -1,6 +1,7 @@
 import { db } from '../firebase';
-import { doc, getDoc, writeBatch, WriteBatch } from 'firebase/firestore';
-import { sanitizeForFirestore } from './firestore-sync';
+import { collection, doc, getDoc, getDocs, writeBatch, WriteBatch } from 'firebase/firestore';
+import { DB_CACHE, sanitizeForFirestore } from './firestore-sync';
+import { legacyDb } from './firebase-client';
 
 const BATCH_LIMIT = 450;
 
@@ -8,6 +9,131 @@ async function commitBatchQueue(batches: WriteBatch[]) {
   for (const batch of batches) {
     await batch.commit();
   }
+}
+
+/**
+ * Import the original Okay ERP document store into the current normalized database.
+ * This is additive/merge-only: it never deletes existing documents. The legacy
+ * project remains read-only; after import, the current database is the live source.
+ */
+async function migrateLegacyOkayErpData() {
+  const statusRef = doc(db, 'systemSettings', 'legacyOkayErpMigrationStatus');
+  const statusSnap = await getDoc(statusRef);
+  if (statusSnap.exists() && statusSnap.data().completed === true) return;
+
+  const legacySnapshot = await getDocs(collection(legacyDb, 'okey_erp'));
+  if (legacySnapshot.empty) {
+    // Do not mark complete if the old project is temporarily unavailable/empty.
+    console.info('Legacy Okay ERP store has no documents yet; migration will retry.');
+    return;
+  }
+
+  const writes: Array<{ ref: ReturnType<typeof doc>; data: any }> = [];
+  const importedKeys: string[] = [];
+  const add = (collectionName: string, id: string, data: any) => {
+    if (!id) return;
+    writes.push({ ref: doc(db, collectionName, id), data: sanitizeForFirestore(data) });
+  };
+  const arrayItems = (value: any) => Array.isArray(value) ? value : [];
+  const recordId = (item: any, fallback?: string) =>
+    String(item?.id || item?.user_id || item?.department_id || item?.refund_id ||
+      item?.deduction_id || item?.entry_id || item?.document_id || item?.log_id || fallback || '');
+
+  for (const legacyDoc of legacySnapshot.docs) {
+    const key = legacyDoc.id;
+    const raw = legacyDoc.data();
+    const items = raw?.items !== undefined ? raw.items : raw;
+    importedKeys.push(key);
+
+    // Keep a local/cache copy so the login screen and older modules can read the
+    // original keys while Firestore listeners hydrate the normalized collections.
+    try {
+      localStorage.setItem(key, JSON.stringify(items));
+      DB_CACHE[key] = items;
+    } catch (error) {
+      console.warn('Could not cache legacy Okay ERP data:', key, error);
+    }
+
+    if (key === 'okey_db_users') {
+      arrayItems(items).forEach((user: any, index: number) => {
+        const id = recordId(user, user?.username || String(index));
+        if (!id) return;
+        const clean = sanitizeForFirestore({ ...user, user_id: user.user_id || id });
+        add('users', id, clean);
+        add('employees', id, clean);
+      });
+    } else if (key === 'okey_db_departments') {
+      arrayItems(items).forEach((dept: any, index: number) => {
+        const id = recordId(dept, String(index));
+        if (id) add('departments', id, { ...dept, department_id: dept.department_id || id });
+      });
+    } else if (key === 'okey_requests') {
+      arrayItems(items).forEach((request: any, index: number) => {
+        const id = recordId(request, String(index));
+        if (!id) return;
+        const target = request.expense_type === 'advance'
+          ? 'advanceRequests'
+          : request.expense_type === 'clearing'
+            ? 'advanceClearings'
+            : 'expenseRequests';
+        add(target, id, { ...request, id });
+      });
+    } else if (key === 'okey_db_refunds' || key === 'okey_db_deductions' ||
+               key === 'okey_db_journal_entries' || key === 'okey_db_accounting_docs' ||
+               key === 'okey_db_enterprise_audit_logs' || key === 'okey_db_logs') {
+      const target = key === 'okey_db_refunds' ? 'refunds'
+        : key === 'okey_db_deductions' ? 'deductions'
+        : key === 'okey_db_journal_entries' ? 'journalEntries'
+        : key === 'okey_db_accounting_docs' ? 'reports'
+        : key === 'okey_db_enterprise_audit_logs' ? 'auditLogs' : 'logs';
+      arrayItems(items).forEach((item: any, index: number) => {
+        const id = recordId(item, String(index));
+        if (id) add(target, id, { ...item, id });
+      });
+    } else if (key === 'okey_db_company_data') {
+      add('companySettings', 'main', items || {});
+    } else if (key === 'okey_db_rules') {
+      add('companySettings', 'rules', { items: arrayItems(items) });
+    } else if (key === 'okey_db_categories_master') {
+      add('masterData', 'categories', { items: arrayItems(items) });
+    } else if (key === 'okey_db_expense_types') {
+      add('masterData', 'expenseTypes', { items: arrayItems(items) });
+    } else if (key === 'okey_db_approval_levels') {
+      add('masterData', 'approvalLevels', { items: arrayItems(items) });
+    } else if (key === 'okey_db_roles_master') {
+      add('masterData', 'roles', { items: arrayItems(items) });
+    } else if (key === 'okey_db_pdf_templates') {
+      add('systemSettings', 'pdfTemplates', { items: arrayItems(items) });
+    } else if (key === 'okey_db_replacement_policy') {
+      add('systemSettings', 'replacementPolicy', { items: arrayItems(items) });
+    }
+    // Budgets are derived from the department master and preserved in local cache.
+  }
+
+  for (let start = 0; start < writes.length; start += BATCH_LIMIT) {
+    const batch = writeBatch(db);
+    writes.slice(start, start + BATCH_LIMIT).forEach(({ ref, data }) => {
+      batch.set(ref, data, { merge: true });
+    });
+    await batch.commit();
+  }
+
+  await commitBatchQueue([(() => {
+    const batch = writeBatch(db);
+    batch.set(statusRef, {
+      completed: true,
+      importedKeys,
+      importedDocumentCount: writes.length,
+      sourceProject: 'okay-project-2a44f',
+      timestamp: new Date().toISOString()
+    }, { merge: true });
+    return batch;
+  })()]);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('okey-db-updated'));
+  }
+  console.info('Legacy Okay ERP data imported with merge-only writes:', writes.length);
 }
 
 /**
@@ -24,6 +150,7 @@ async function commitBatchQueue(batches: WriteBatch[]) {
  */
 export async function migrateLocalToFirestore() {
   try {
+    await migrateLegacyOkayErpData();
     const isMigratedRef = doc(db, 'systemSettings', 'migrationStatus');
     const isMigratedSnap = await getDoc(isMigratedRef);
 

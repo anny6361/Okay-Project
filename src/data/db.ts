@@ -562,13 +562,13 @@ export function addAccountingDocument(
 }
 
 export const INITIAL_COMPANY_DATA: CompanyMasterData = {
-  companyName: 'บริษัท โอเค เอ็กซ์เพนส์ แมเนจเมนท์ จำกัด (OKAY EXPENSE MANAGEMENT CO., LTD.)',
-  logoUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=60',
-  address: '99/9 ถนนพระราม 9 แขวงห้วยขวาง เขตห้วยขวาง กรุงเทพมหานคร 10310 (99/9 Rama IX Road, Huai Khwang, Bangkok 10310)',
-  taxId: '0-1055-66000-11-2',
-  phone: '02-123-4567',
-  email: 'finance@okay.com',
-  bankInfo: 'ธนาคารกสิกรไทย (KBANK) บัญชีกองกลาง เลขที่ 012-3-45678-9'
+  companyName: 'บริษัท โอคีย์ จำกัด',
+  logoUrl: '',
+  address: '339 หมู่ 9 ตำบลดอนสมบูรณ์ อำเภอยางตลาด จังหวัดกาฬสินธุ์ 46120',
+  taxId: '',
+  phone: '',
+  email: '',
+  bankInfo: ''
 };
 
 export const INITIAL_CATEGORIES_MASTER: ExpenseCategoryMaster[] = [
@@ -628,7 +628,32 @@ export const INITIAL_PDF_TEMPLATES: PdfTemplateMaster[] = [
 
 export function getDbCompanyData(): CompanyMasterData {
   const data = getFromCache('okey_db_company_data');
-  if (data) return (typeof data === 'string' ? JSON.parse(data) : data);
+  if (data) {
+    const parsed = (typeof data === 'string' ? JSON.parse(data) : data) as CompanyMasterData;
+    const updated: CompanyMasterData = { ...INITIAL_COMPANY_DATA, ...parsed };
+    let changed = false;
+
+    // Replace only known demo placeholders; preserve any genuine company details already entered.
+    if (!updated.companyName || /บริษัท โอเค เอ็กซ์เพนส์ แมเนจเมนท์|OKAY EXPENSE MANAGEMENT/i.test(updated.companyName)) {
+      updated.companyName = 'บริษัท โอคีย์ จำกัด';
+      changed = true;
+    }
+    if (!updated.address || /99\/9 ถนนพระราม 9|99\/9 Rama IX Road/i.test(updated.address)) {
+      updated.address = INITIAL_COMPANY_DATA.address;
+      changed = true;
+    }
+    if (updated.logoUrl === 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=60') {
+      updated.logoUrl = '';
+      changed = true;
+    }
+    if (updated.taxId === '0-1055-66000-11-2') { updated.taxId = ''; changed = true; }
+    if (updated.phone === '02-123-4567') { updated.phone = ''; changed = true; }
+    if (updated.email === 'finance@okay.com') { updated.email = ''; changed = true; }
+    if (updated.bankInfo === 'ธนาคารกสิกรไทย (KBANK) บัญชีกองกลาง เลขที่ 012-3-45678-9') { updated.bankInfo = ''; changed = true; }
+
+    if (changed) saveToFirestore('okey_db_company_data', updated);
+    return updated;
+  }
   saveToFirestore('okey_db_company_data', INITIAL_COMPANY_DATA);
   return INITIAL_COMPANY_DATA;
 }

@@ -1453,7 +1453,7 @@ export default function App() {
 
         {/* Footer */}
         <footer className="py-4 px-6 border-t border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400 bg-white dark:bg-slate-900 mt-auto">
-          <p>© 2026 OKAY Expense Management. สิทธิ์ระบบวิสาหกิจแบบไดนามิก.</p>
+          <p>© 2026 บริษัท โอคีย์ จำกัด</p>
         </footer>
       </div>
 

@@ -896,7 +896,7 @@ export default function BackupRestoreView({ currentUser, onRefreshData, themeCol
             <input value={clearConfirmationText} onChange={e => setClearConfirmationText(e.target.value)} className="w-full rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-3 py-2 text-sm mb-5" placeholder="ล้างข้อมูลธุรกรรม" />
             <div className="flex justify-end gap-2">
               <button disabled={isClearingData} onClick={() => { setShowClearDataConfirm(false); setClearConfirmationText(''); setClearAdminPassword(''); }} className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800">ยกเลิก</button>
-              <button disabled={isClearingData || clearConfirmationText !== 'ล้างข้อมูลธุรกรรม' || !clearAdminPassword} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 disabled:opacity-40">{isClearingData ? 'กำลังล้าง...' : 'ยืนยันลบข้อมูลธุรกรรม'}</button>
+              <button type="button" onClick={clearTransactionData} disabled={isClearingData || clearConfirmationText !== 'ล้างข้อมูลธุรกรรม' || !clearAdminPassword} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 disabled:opacity-40">{isClearingData ? 'กำลังล้าง...' : 'ยืนยันลบข้อมูลธุรกรรม'}</button>
             </div>
           </div>
         </div>

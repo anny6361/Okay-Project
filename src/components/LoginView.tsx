@@ -133,6 +133,11 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
   useEffect(() => {
     loadAuthData();
+    // The one-time legacy database import can finish after this screen mounts.
+    // Refresh the available accounts when that import completes.
+    const refreshAccounts = () => loadAuthData();
+    window.addEventListener('okey-db-updated', refreshAccounts);
+    return () => window.removeEventListener('okey-db-updated', refreshAccounts);
   }, []);
 
   // Live validate username uniqueness and pattern for registration

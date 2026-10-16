@@ -3,7 +3,6 @@ import { auth, db } from './firebase';
 import { runTransaction, doc } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { setupFirestoreSync, setGlobalRenderTrigger, DB_CACHE, saveToFirestore, getFromCache } from './lib/firestore-sync';
-import { migrateLocalToFirestore } from './lib/migration';
 import { 
   Bell, 
   Search, 
@@ -64,7 +63,6 @@ import {
 } from './data/db';
 const AdminConfigView = React.lazy(() => import('./components/AdminConfigView'));
 
-import { setupClientFirestoreSync } from './lib/firebase-client';
 
 
 
@@ -180,7 +178,6 @@ export default function App() {
   useEffect(() => {
     setGlobalRenderTrigger(() => setSyncCounter(c => c + 1));
     setupFirestoreSync();
-    migrateLocalToFirestore().catch(console.error);
     
     const unsub = onAuthStateChanged(auth, (user) => {
       setIsSessionChecking(false);

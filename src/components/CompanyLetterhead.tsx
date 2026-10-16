@@ -16,9 +16,9 @@ export const CompanyLetterhead: React.FC<CompanyLetterheadProps> = ({
 }) => {
   const companyName = companyData?.companyName || 'บริษัท โอคีย์ จำกัด';
   const logoUrl = companyData?.logoUrl || '';
-  const address = companyData?.address || '99/9 ถนนพระราม 9 แขวงห้วยขวาง เขตห้วยขวาง กรุงเทพมหานคร 10310 (99/9 Rama IX Road, Huai Khwang, Bangkok 10310)';
-  const taxId = companyData?.taxId || '0-1055-66000-11-2';
-  const phone = companyData?.phone || '02-123-4567';
+  const address = companyData?.address || '339 หมู่ 9 ตำบลดอนสมบูรณ์ อำเภอยางตลาด จังหวัดกาฬสินธุ์ 46120';
+  const taxId = companyData?.taxId || '';
+  const phone = companyData?.phone || '';
   const email = companyData?.email || '';
   
   // Extract initials for logo placeholder (e.g., OK)

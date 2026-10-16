@@ -1,6 +1,6 @@
-import { getApp, getApps, initializeApp } from 'firebase/app';
-import { collection, deleteDoc, doc, getDocs, getFirestore, writeBatch } from 'firebase/firestore';
-import bcrypt from 'bcryptjs';
+import { getApp, getApps, initializeApp } from 'firebase-admin/app';
+import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { compareSync } from 'bcryptjs';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 interface RequestLike {
@@ -17,38 +17,41 @@ interface ResponseLike {
   json(value: Record<string, unknown>): ResponseLike;
 }
 
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const firebaseApp = getApps().length
+  ? getApp()
+  : initializeApp({ projectId: firebaseConfig.projectId });
+const db: Firestore = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
 function passwordMatches(input: string, storedValue: unknown): boolean {
   if (typeof storedValue !== 'string' || !storedValue || !input) return false;
-  const raw = input;
-  const trimmed = input.trim();
   const stored = storedValue.trim();
-  if (raw === stored || trimmed === stored || trimmed.toLowerCase() === stored.toLowerCase()) return true;
   if (/^\$2[aby]\$/.test(stored)) {
     try {
-      return bcrypt.compareSync(raw, stored) || bcrypt.compareSync(trimmed, stored) ||
-        bcrypt.compareSync(trimmed.toLowerCase(), stored);
+      return compareSync(input, stored) || compareSync(input.trim(), stored);
     } catch {
       return false;
     }
   }
-  return false;
+  return input === stored || input.trim() === stored;
+}
+
+function isPrivileged(user: Record<string, unknown>): boolean {
+  if (user.is_active === false || user.deleted === true) return false;
+  const role = String(user.approval_level || '').toLowerCase();
+  const position = String(user.role || '').toLowerCase();
+  return ['administrator', 'executive'].includes(role) ||
+    ['administrator', 'executive'].includes(position);
 }
 
 async function deleteCollectionInBatches(collectionName: string): Promise<number> {
-  const snapshot = await getDocs(collection(db, collectionName));
-  let deleted = 0;
-  const docs = snapshot.docs;
-  for (let start = 0; start < docs.length; start += 400) {
-    const batch = writeBatch(db);
-    const chunk = docs.slice(start, start + 400);
-    chunk.forEach(item => batch.delete(doc(db, collectionName, item.id)));
+  const snapshot = await db.collection(collectionName).get();
+  const records = snapshot.docs;
+  for (let start = 0; start < records.length; start += 450) {
+    const batch = db.batch();
+    records.slice(start, start + 450).forEach(record => batch.delete(record.ref));
     await batch.commit();
-    deleted += chunk.length;
   }
-  return deleted;
+  return records.length;
 }
 
 export default async function handler(req: RequestLike, res: ResponseLike) {
@@ -61,32 +64,39 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   if (confirmation !== 'ล้างข้อมูลธุรกรรม') {
     return res.status(400).json({ success: false, error: 'กรุณาพิมพ์คำว่า ล้างข้อมูลธุรกรรม ให้ตรงตามที่กำหนด' });
   }
-  if (!username || !password) {
+  if (typeof username !== 'string' || !username.trim() ||
+      typeof password !== 'string' || !password) {
     return res.status(400).json({ success: false, error: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่านแอดมิน' });
   }
 
   try {
-    const userSnapshot = await getDocs(collection(db, 'users'));
-    const normalizedUsername = String(username).trim().toLowerCase();
-    const matchedUser = userSnapshot.docs
-      .map(item => item.data() as Record<string, unknown>)
-      .find(user => [user.username, user.email, user.user_id, user.employee_id]
-        .some(value => typeof value === 'string' && value.trim().toLowerCase() === normalizedUsername));
+    const normalizedUsername = username.trim().toLowerCase();
+    const [legacyUserDoc, currentUsersSnapshot] = await Promise.all([
+      db.collection('okey_erp').doc('okey_db_users').get(),
+      db.collection('users').get()
+    ]);
+    const legacyUsers = legacyUserDoc.data()?.items;
+    const users: Record<string, unknown>[] = [
+      ...(Array.isArray(legacyUsers) ? legacyUsers as Record<string, unknown>[] : []),
+      ...currentUsersSnapshot.docs.map(record => record.data() as Record<string, unknown>)
+    ];
+    const user = users.find(candidate =>
+      [candidate.username, candidate.email, candidate.user_id, candidate.employee_id]
+        .some(value => typeof value === 'string' && value.trim().toLowerCase() === normalizedUsername)
+    );
 
-    if (!matchedUser || !passwordMatches(String(password), matchedUser.password)) {
-      return res.status(401).json({ success: false, error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+    const storedPassword = user?.password ?? user?.password_hash;
+    if (!user || !isPrivileged(user) || !passwordMatches(password, storedPassword)) {
+      return res.status(401).json({
+        success: false,
+        error: !user || !passwordMatches(password, storedPassword)
+          ? 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'
+          : 'บัญชีนี้ไม่มีสิทธิ์ล้างข้อมูลธุรกรรม'
+      });
     }
 
-    const role = String(matchedUser.approval_level || '').toLowerCase();
-    const position = String(matchedUser.role || '').toLowerCase();
-    const isAuthorized = role === 'administrator' || role === 'executive' ||
-      position === 'administrator' || position === 'executive';
-    if (!isAuthorized) {
-      return res.status(403).json({ success: false, error: 'บัญชีนี้ไม่มีสิทธิ์ล้างข้อมูลธุรกรรม' });
-    }
-
-    // Clear transaction records only. Preserve users, employees, departments/budgets,
-    // master data, company settings, approval rules, audit logs and backup history.
+    // Transaction collections only. Keep users, employees, budgets, company settings,
+    // master data, approval rules, audit logs, and backup history intact.
     const collectionsToClear = [
       'expenseRequests',
       'advanceRequests',
@@ -101,12 +111,35 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
       deletedCounts[collectionName] = await deleteCollectionInBatches(collectionName);
     }
 
+    // Empty legacy transactional arrays read by older app versions.
+    const legacyKeys = [
+      'okey_requests',
+      'okey_db_refunds',
+      'okey_db_deductions',
+      'okey_db_journal_entries',
+      'okey_db_accounting_docs'
+    ];
+    for (let start = 0; start < legacyKeys.length; start += 450) {
+      const batch = db.batch();
+      legacyKeys.slice(start, start + 450).forEach(key => {
+        batch.set(db.collection('okey_erp').doc(key), { items: [] }, { merge: true });
+      });
+      await batch.commit();
+    }
+
     const totalDeleted = Object.values(deletedCounts).reduce((sum, count) => sum + count, 0);
+    console.warn('[ADMIN CLEAR TRANSACTIONS]', JSON.stringify({
+      operator: user.user_id || user.email || user.username,
+      at: new Date().toISOString(),
+      deletedCounts,
+      legacyKeys
+    }));
     return res.status(200).json({
       success: true,
       message: 'ล้างข้อมูลธุรกรรมสำเร็จ โดยเก็บข้อมูลหลักของระบบไว้',
       totalDeleted,
-      deletedCounts
+      deletedCounts,
+      clearedLegacyKeys: legacyKeys
     });
   } catch (error) {
     console.error('clear-transaction-data failed:', error);

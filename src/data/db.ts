@@ -223,7 +223,7 @@ export function getDbUsers(): UserProfile[] {
   // any historical Firestore documents.
   const legacySampleCodes = new Set(['okay0000', 'okay0001', 'okay0002', 'okay0003', 'okay0004']);
   const parsed = snapshotUsers.filter((u: UserProfile) => {
-    const code = String(u.employee_id || u.username || '').trim().toLowerCase();
+    const code = String(u.employee_id || u.username || u.user_id || '').trim().toLowerCase();
     return !legacySampleCodes.has(code);
   });
 
@@ -231,7 +231,7 @@ export function getDbUsers(): UserProfile[] {
   const enriched = parsed.map((u: UserProfile) => {
     if (
       typeof u.signatureUrl === 'string' &&
-      /John_F\\._Kennedy_Signature|wikipedia-commons-local-public/i.test(u.signatureUrl)
+      /John_F\._Kennedy_Signature|wikipedia-commons-local-public/i.test(u.signatureUrl)
     ) {
       u.signatureUrl = '';
       modified = true;

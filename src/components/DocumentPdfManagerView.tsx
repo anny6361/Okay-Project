@@ -218,7 +218,7 @@ export default function DocumentPdfManagerView() {
       const formattedAmount = (selectedRequest.amount || 0).toLocaleString('th-TH', { minimumFractionDigits: 2 });
       
       // Map signature cards with registered signature images or pending placeholder
-      const pdfReplacementLevelsHtml = selectedRequest.approvalHistory.map((step, idx) => {
+      const pdfReplacementLevelsHtml = (selectedRequest.approvalHistory || []).map((step, idx) => {
         const approverNameKey = normalizePersonName(step.approverName);
         const matchingUser = currentUsers.find(u =>
           !!approverNameKey && (
@@ -606,7 +606,7 @@ export default function DocumentPdfManagerView() {
     const matchedAdvance = requests.find(r => r.id === selectedRequest.advance_id);
 
     // Map signature cards with registered signature images or pending placeholder
-    const pdfStandardLevelsHtml = selectedRequest.approvalHistory.map((step, idx) => {
+    const pdfStandardLevelsHtml = (selectedRequest.approvalHistory || []).map((step, idx) => {
       const approverNameKey = normalizePersonName(step.approverName);
       const matchingUser = currentUsers.find(u =>
         !!approverNameKey && (
@@ -1729,7 +1729,7 @@ export default function DocumentPdfManagerView() {
                       </div>
 
                       {/* Approval Chain history cards */}
-                      {selectedRequest.approvalHistory.map((step, idx) => {
+                      {(selectedRequest.approvalHistory || []).map((step, idx) => {
                         const approverNameKey = normalizePersonName(step.approverName);
                         const matchingUser = currentUsers.find(u =>
                           !!approverNameKey && (

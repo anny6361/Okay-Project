@@ -4,7 +4,15 @@ import {
   type Firestore
 } from 'firebase/firestore';
 import { compareSync } from 'bcryptjs';
-import firebaseConfig from '../../firebase-applet-config.json';
+const firebaseConfig = {
+  apiKey: 'AIzaSyAOxJXRhskMaLeUeQOlIW5ZZjSBa9BKWg8',
+  authDomain: 'oceanic-analyzer-ngtt6.firebaseapp.com',
+  projectId: 'oceanic-analyzer-ngtt6',
+  storageBucket: 'oceanic-analyzer-ngtt6.firebasestorage.app',
+  messagingSenderId: '829883693592',
+  appId: '1:829883693592:web:091e39981b74ea8d93216d',
+  firestoreDatabaseId: 'ai-studio-okaycoltd-27ad1f5a-ea7d-42fa-a3aa-36232ce3b315'
+};
 
 interface RequestLike {
   method?: string;

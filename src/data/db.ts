@@ -1,4 +1,4 @@
-import { getFromCache, saveToFirestore } from '../lib/firestore-sync';
+import { DB_CACHE, saveToFirestore } from '../lib/firestore-sync';
 import { 
   UserProfile, 
   ApprovalRule, 
@@ -211,138 +211,83 @@ export function comparePassword(password: string, hash: string): boolean {
 }
 
 export function getDbUsers(): UserProfile[] {
-  const users = getFromCache('okey_db_users');
-  if (users) {
-    try {
-      let parsed = (typeof users === 'string' ? JSON.parse(users) : users);
-      let modified = false;
+  // Firestore's primary users collection is the sole source of truth.
+  // Do not fall back to browser-specific localStorage while the snapshot is loading.
+  if (!Object.prototype.hasOwnProperty.call(DB_CACHE, 'okey_db_users')) return [];
 
-      // Ensure Super Administrator is always present
-      const hasSuperAdmin = parsed.some((u: UserProfile) => u.username === 'Okay9999');
-      if (!hasSuperAdmin) {
-        const superadmin = INITIAL_USERS.find(iu => iu.username === 'Okay9999');
-        if (superadmin) {
-          parsed.unshift({
-            ...superadmin,
-            password: hashPassword(superadmin.password || 'Okay.co.ltd')
-          });
-          modified = true;
-        }
-      }
+  const snapshotUsers = DB_CACHE['okey_db_users'];
+  if (!Array.isArray(snapshotUsers)) return [];
 
-      const enriched = parsed.map((u: UserProfile) => {
-        // Remove obsolete demo signature URLs that point to a missing Wikimedia proxy file.
-        // Users can then upload or draw their own real signature from My Profile.
-        if (
-          typeof u.signatureUrl === 'string' &&
-          /John_F\._Kennedy_Signature|wikipedia-commons-local-public/i.test(u.signatureUrl)
-        ) {
-          u.signatureUrl = '';
-          modified = true;
-        }
-        if (u.username === 'Okay9999') {
-          if (u.role !== 'Administrator' || u.approval_level !== 'Administrator' || u.is_active !== true || u.employmentStatus !== 'active') {
-            u.role = 'Administrator';
-            u.approval_level = 'Administrator';
-            u.is_active = true;
-            u.employmentStatus = 'active';
-            modified = true;
-          }
-        }
+  // These accounts came from the old sample employee registry, not the real
+  // employee profiles. Hide them from the live application without deleting
+  // any historical Firestore documents.
+  const legacySampleCodes = new Set(['okay0000', 'okay0001', 'okay0002', 'okay0003', 'okay0004']);
+  const parsed = snapshotUsers.filter((u: UserProfile) => {
+    const code = String(u.employee_id || u.username || '').trim().toLowerCase();
+    return !legacySampleCodes.has(code);
+  });
 
-        const match = INITIAL_USERS.find(iu => iu.user_id === u.user_id);
-        if (match) {
-          if (!u.phone) {
-            u.phone = match.phone;
-            modified = true;
-          }
-          if (!u.password) {
-            u.password = match.password;
-            modified = true;
-          }
-          // Populate missing profile fields for existing initial users
-          if (!u.idCard && match.idCard) {
-            u.idCard = match.idCard;
-            u.title = match.title;
-            u.firstName = match.firstName;
-            u.lastName = match.lastName;
-            u.nickname = match.nickname;
-            u.birthDate = match.birthDate;
-            u.gender = match.gender;
-            u.address = match.address;
-            u.province = match.province;
-            u.electricityRegion = match.electricityRegion;
-            u.startDate = match.startDate;
-            u.employmentStatus = match.employmentStatus;
-            modified = true;
-          }
-        }
-        
-        // Recalculate age dynamically
-        if (u.birthDate) {
-          const currentAge = calculateAge(u.birthDate);
-          if (u.age !== currentAge) {
-            u.age = currentAge;
-            modified = true;
-          }
-        }
-        
-        // Ensure the password is secure (bcrypt hashed)
-        if (u.password && !u.password.startsWith('$2a$') && !u.password.startsWith('$2b$')) {
-          u.password = hashPassword(u.password);
-          modified = true;
-        }
-        
-        return u;
-      });
-      if (modified) {
-        saveToFirestore('okey_db_users', enriched);
-        return enriched;
-      }
-      return parsed;
-    } catch (e) {
-      const initialWithHashedPasswords = INITIAL_USERS.map(u => ({
-        ...u,
-        password: u.password ? hashPassword(u.password) : undefined
-      }));
-      saveToFirestore('okey_db_users', initialWithHashedPasswords);
-      return initialWithHashedPasswords;
+  let modified = parsed.length !== snapshotUsers.length;
+  const enriched = parsed.map((u: UserProfile) => {
+    if (
+      typeof u.signatureUrl === 'string' &&
+      /John_F\\._Kennedy_Signature|wikipedia-commons-local-public/i.test(u.signatureUrl)
+    ) {
+      u.signatureUrl = '';
+      modified = true;
     }
+
+    if (u.username === 'Okay9999') {
+      if (u.role !== 'Administrator' || u.approval_level !== 'Administrator' || u.is_active !== true || u.employmentStatus !== 'active') {
+        u.role = 'Administrator';
+        u.approval_level = 'Administrator';
+        u.is_active = true;
+        u.employmentStatus = 'active';
+        modified = true;
+      }
+    }
+
+    if (u.birthDate) {
+      const currentAge = calculateAge(u.birthDate);
+      if (u.age !== currentAge) {
+        u.age = currentAge;
+        modified = true;
+      }
+    }
+
+    if (u.password && !u.password.startsWith('$2a$') && !u.password.startsWith('$2b$')) {
+      u.password = hashPassword(u.password);
+      modified = true;
+    }
+
+    return u;
+  });
+
+  // Keep the browser cache aligned with the authoritative snapshot, and persist
+  // only legitimate records when a real record required normalization.
+  DB_CACHE['okey_db_users'] = enriched;
+  if (modified) {
+    saveToFirestore('okey_db_users', enriched);
   }
-  
-  const initialWithHashedPasswords = INITIAL_USERS.map(u => ({
-    ...u,
-    password: u.password ? hashPassword(u.password) : undefined
-  }));
-  saveToFirestore('okey_db_users', initialWithHashedPasswords);
-  return initialWithHashedPasswords;
+  return enriched;
 }
 
 export function saveDbUsers(users: UserProfile[]) {
-  let finalUsers = [...users];
-  const hasSuperAdmin = finalUsers.some(u => u.username === 'Okay9999');
-  if (!hasSuperAdmin) {
-    const superadmin = INITIAL_USERS.find(iu => iu.username === 'Okay9999');
-    if (superadmin) {
-      finalUsers.unshift({
-        ...superadmin,
-        password: hashPassword(superadmin.password || 'Okay.co.ltd')
-      });
-    }
-  }
-
-  finalUsers = finalUsers.map(u => {
-    if (u.username === 'Okay9999') {
-      return {
-        ...u,
-        role: 'Administrator',
-        approval_level: 'Administrator',
-        is_active: true,
-        employmentStatus: 'active'
-      };
-    }
-    return u;
-  });
+  const legacySampleCodes = new Set(['okay0000', 'okay0001', 'okay0002', 'okay0003', 'okay0004']);
+  const finalUsers = users
+    .filter(u => !legacySampleCodes.has(String(u.employee_id || u.username || '').trim().toLowerCase()))
+    .map(u => {
+      if (u.username === 'Okay9999') {
+        return {
+          ...u,
+          role: 'Administrator',
+          approval_level: 'Administrator',
+          is_active: true,
+          employmentStatus: 'active'
+        };
+      }
+      return u;
+    });
 
   saveToFirestore('okey_db_users', finalUsers);
 }

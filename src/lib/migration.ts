@@ -149,8 +149,15 @@ async function migrateLegacyOkayErpData() {
  * queued successfully.
  */
 export async function migrateLocalToFirestore() {
+  // Legacy import is best-effort; if the old Firebase project is temporarily
+  // unreachable, continue the existing local-to-current-database migration.
   try {
     await migrateLegacyOkayErpData();
+  } catch (legacyError) {
+    console.error('Legacy Okay ERP import failed; preserving current/local data:', legacyError);
+  }
+
+  try {
     const isMigratedRef = doc(db, 'systemSettings', 'migrationStatus');
     const isMigratedSnap = await getDoc(isMigratedRef);
 

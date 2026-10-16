@@ -69,23 +69,44 @@ export default function DocumentPdfManagerView() {
       .replace(/[\s.\-_'’]/g, '')
       .toLocaleLowerCase('th-TH');
 
-  // Resolve requester by stable user ID first, then employee/user codes, then normalized full name.
+  // Resolve requester using every identifier available; request creator may be stored as username or display name.
   const findRequesterProfile = (req: ExpenseRequest, profileList: UserProfile[]) => {
-    const stableId = req.created_by || req.user_id;
-    if (stableId) {
-      const byId = profileList.find(u => u.user_id === stableId);
-      if (byId) return byId;
-    }
+    const ids = [req.created_by, req.user_id].filter(Boolean) as string[];
+    const byStableId = profileList.find(u => ids.includes(u.user_id));
+    if (byStableId) return byStableId;
+
+    const byEmployeeCode = profileList.find(u =>
+      ids.some(id => id === u.employee_id || id === u.username)
+    );
+    if (byEmployeeCode) return byEmployeeCode;
 
     const requestName = normalizePersonName(req.employeeName);
-    return profileList.find(u =>
-      (!!u.employee_id && (u.employee_id === req.user_id || u.employee_id === req.created_by)) ||
-      (!!u.username && (u.username === req.user_id || u.username === req.created_by)) ||
-      (!!requestName && (
-        normalizePersonName(u.name) === requestName ||
-        normalizePersonName([u.title, u.firstName, u.lastName].filter(Boolean).join(' ')) === requestName
-      ))
-    );
+    if (!requestName) return undefined;
+    return profileList.find(u => [
+      u.name,
+      [u.title, u.firstName, u.lastName].filter(Boolean).join(' '),
+      u.username,
+      u.employee_id
+    ].some(value => normalizePersonName(value) === requestName));
+  };
+
+  // Match approvers by actual name/code first. Role labels are a fallback for legacy history records.
+  const findApproverProfile = (step: { approverName: string; approverRole?: string }, profileList: UserProfile[]) => {
+    const key = normalizePersonName(step.approverName);
+    const byIdentity = profileList.find(u => !!key && [
+      u.name,
+      [u.title, u.firstName, u.lastName].filter(Boolean).join(' '),
+      u.username,
+      u.employee_id,
+      u.user_id
+    ].some(value => normalizePersonName(value) === key));
+    if (byIdentity) return byIdentity;
+
+    const roleKeys = [step.approverName, step.approverRole].map(normalizePersonName).filter(Boolean);
+    const roleMatches = profileList.filter(u => roleKeys.some(roleKey => [
+      u.role, u.approval_level, u.position
+    ].some(value => normalizePersonName(value) === roleKey)));
+    return roleMatches.find(u => !!u.signatureUrl) || roleMatches[0];
   };
 
   // Helper function to compile ALL request attachments:
@@ -219,15 +240,9 @@ export default function DocumentPdfManagerView() {
       
       // Map signature cards with registered signature images or pending placeholder
       const pdfReplacementLevelsHtml = (selectedRequest.approvalHistory || []).map((step, idx) => {
-        const approverNameKey = normalizePersonName(step.approverName);
-        const matchingUser = currentUsers.find(u =>
-          !!approverNameKey && (
-            normalizePersonName(u.name) === approverNameKey ||
-            normalizePersonName([u.title, u.firstName, u.lastName].filter(Boolean).join(' ')) === approverNameKey
-          )
-        );
+        const matchingUser = findApproverProfile(step, currentUsers);
         const userSig = matchingUser?.signatureUrl;
-        const isApproved = step.status === 'approved';
+        const isApproved = String(step.status || '').toLowerCase() === 'approved';
 
         if (isApproved && userSig) {
           return `
@@ -615,7 +630,7 @@ export default function DocumentPdfManagerView() {
         )
       );
       const userSig = matchingUser?.signatureUrl;
-      const isApproved = step.status === 'approved';
+      const isApproved = String(step.status || '').toLowerCase() === 'approved';
 
       if (isApproved && userSig) {
         return `
@@ -1730,15 +1745,9 @@ export default function DocumentPdfManagerView() {
 
                       {/* Approval Chain history cards */}
                       {(selectedRequest.approvalHistory || []).map((step, idx) => {
-                        const approverNameKey = normalizePersonName(step.approverName);
-                        const matchingUser = currentUsers.find(u =>
-                          !!approverNameKey && (
-                            normalizePersonName(u.name) === approverNameKey ||
-                            normalizePersonName([u.title, u.firstName, u.lastName].filter(Boolean).join(' ')) === approverNameKey
-                          )
-                        );
+                        const matchingUser = findApproverProfile(step, currentUsers);
                         const userSig = matchingUser?.signatureUrl;
-                        const isApproved = step.status === 'approved';
+                        const isApproved = String(step.status || '').toLowerCase() === 'approved';
 
                         return (
                           <div key={step.id} className="p-3 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 flex flex-col justify-between min-h-[120px] shadow-xs">

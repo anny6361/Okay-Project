@@ -1,5 +1,5 @@
 import { db } from '../firebase';
-import { collection, doc, getDoc, getDocs, writeBatch, WriteBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, writeBatch, WriteBatch } from 'firebase/firestore';
 import { DB_CACHE, sanitizeForFirestore } from './firestore-sync';
 import { legacyDb } from './firebase-client';
 
@@ -30,19 +30,36 @@ async function migrateLegacyOkayErpData() {
 
   const writes: Array<{ ref: ReturnType<typeof doc>; data: any }> = [];
   const importedKeys: string[] = [];
+  let importedUserCount = 0;
+  let userSourceShape = 'missing';
   const add = (collectionName: string, id: string, data: any) => {
     if (!id) return;
     writes.push({ ref: doc(db, collectionName, id), data: sanitizeForFirestore(data) });
   };
-  const arrayItems = (value: any) => Array.isArray(value) ? value : [];
+  const arrayItems = (value: any) => {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object') {
+      // Support legacy exports stored as { items: [...] }, { users: [...] },
+      // { data: [...] }, or a map of records keyed by employee code.
+      const nested = value.items ?? value.users ?? value.data ?? value.records;
+      if (Array.isArray(nested)) return nested;
+      const values = Object.values(value);
+      if (values.length && values.every(item => item && typeof item === 'object')) return values;
+    }
+    return [];
+  };
   const recordId = (item: any, fallback?: string) =>
-    String(item?.id || item?.user_id || item?.department_id || item?.refund_id ||
-      item?.deduction_id || item?.entry_id || item?.document_id || item?.log_id || fallback || '');
+    String(item?.id || item?.user_id || item?.employee_id || item?.username ||
+      item?.department_id || item?.refund_id || item?.deduction_id || item?.entry_id ||
+      item?.document_id || item?.log_id || fallback || '');
 
   for (const legacyDoc of legacySnapshot.docs) {
     const key = legacyDoc.id;
     const raw = legacyDoc.data();
-    const items = raw?.items !== undefined ? raw.items : raw;
+    const items = raw?.items !== undefined ? raw.items
+      : raw?.users !== undefined ? raw.users
+      : raw?.data !== undefined ? raw.data
+      : raw;
     importedKeys.push(key);
 
     // Keep a local/cache copy so the login screen and older modules can read the
@@ -55,12 +72,17 @@ async function migrateLegacyOkayErpData() {
     }
 
     if (key === 'okey_db_users') {
-      arrayItems(items).forEach((user: any, index: number) => {
-        const id = recordId(user, user?.username || String(index));
-        if (!id) return;
+      const sourceUsers = arrayItems(items);
+      userSourceShape = Array.isArray(items) ? 'array'
+        : items && typeof items === 'object' ? Object.keys(items).slice(0, 10).join(',') || 'object'
+        : typeof items;
+      sourceUsers.forEach((user: any, index: number) => {
+        const id = recordId(user, String(index));
+        if (!id || !user || typeof user !== 'object') return;
         const clean = sanitizeForFirestore({ ...user, user_id: user.user_id || id });
         add('users', id, clean);
         add('employees', id, clean);
+        importedUserCount += 1;
       });
     } else if (key === 'okey_db_departments') {
       arrayItems(items).forEach((dept: any, index: number) => {
@@ -110,6 +132,24 @@ async function migrateLegacyOkayErpData() {
     // Budgets are derived from the department master and preserved in local cache.
   }
 
+  // Never mark the source migration complete unless actual user records were
+  // found and queued. Otherwise a missing/oddly-shaped user document would make
+  // every later retry skip the import and leave all staff locked out.
+  if (importedUserCount === 0) {
+    await setDoc(statusRef, {
+      completed: false,
+      importedKeys,
+      importedDocumentCount: writes.length,
+      importedUserCount: 0,
+      userSourceShape,
+      sourceProject: 'okay-project-2a44f',
+      lastAttemptAt: new Date().toISOString(),
+      errorReason: 'No user records found in legacy okey_db_users; migration remains retryable.'
+    }, { merge: true });
+    console.warn('Legacy import did not find user records; migration status remains incomplete.');
+    return;
+  }
+
   for (let start = 0; start < writes.length; start += BATCH_LIMIT) {
     const batch = writeBatch(db);
     writes.slice(start, start + BATCH_LIMIT).forEach(({ ref, data }) => {
@@ -124,8 +164,11 @@ async function migrateLegacyOkayErpData() {
       completed: true,
       importedKeys,
       importedDocumentCount: writes.length,
+      importedUserCount,
+      userSourceShape,
       sourceProject: 'okay-project-2a44f',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      errorReason: null
     }, { merge: true });
     return batch;
   })()]);
@@ -133,7 +176,7 @@ async function migrateLegacyOkayErpData() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('okey-db-updated'));
   }
-  console.info('Legacy Okay ERP data imported with merge-only writes:', writes.length);
+  console.info('Legacy Okay ERP data imported with merge-only writes:', writes.length, 'users:', importedUserCount);
 }
 
 /**

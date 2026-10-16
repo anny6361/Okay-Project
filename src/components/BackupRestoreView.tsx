@@ -849,8 +849,24 @@ export default function BackupRestoreView({ currentUser, onRefreshData, themeCol
           password: clearAdminPassword
         })
       });
-      const result = await response.json();
-      if (!response.ok || !result.success) throw new Error(result.error || 'ไม่สามารถเคลียร์ข้อมูลได้');
+      // Read as text first: hosting/proxy errors may return HTML or plain text instead of JSON.
+      const responseText = await response.text();
+      let result: any = null;
+      try {
+        result = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        const detail = responseText
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\\s+/g, ' ')
+          .trim()
+          .slice(0, 240);
+        throw new Error(
+          `เซิร์ฟเวอร์ตอบกลับไม่ใช่ JSON (HTTP ${response.status})${detail ? ': ' + detail : ''} — กรุณาตรวจสอบว่า API ล้างข้อมูลถูก deploy แล้ว`
+        );
+      }
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.error || `เซิร์ฟเวอร์ไม่สามารถล้างข้อมูลได้ (HTTP ${response.status})`);
+      }
       ['okey_requests', 'okey_db_refunds', 'okey_db_deductions', 'okey_db_journal_entries', 'okey_db_accounting_docs'].forEach(key => localStorage.setItem(key, '[]'));
       setShowClearDataConfirm(false);
       setClearConfirmationText('');

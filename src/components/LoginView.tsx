@@ -378,17 +378,26 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
         throw new Error('ไม่พบบัญชีผู้ใช้งานนี้ในระบบ กรุณาตรวจสอบ Username/อีเมล หรือแจ้งผู้ดูแลระบบ');
       }
 
-      // Persist the recovery account into the shared database without deleting
-      // any existing records, so the next login works across devices too.
-      if (isMasterAdminLogin && !dbUsers.some(u => u.username?.toLowerCase() === 'okay9999')) {
+      // Normalize the master-admin record on every valid master-admin login.
+      // This also repairs stale/inactive legacy records without touching other users.
+      if (isMasterAdminLogin) {
         const recoveredAdmin = {
           ...userAccount,
+          user_id: userAccount.user_id || 'user-superadmin',
+          employee_id: 'Okay9999',
+          username: 'Okay9999',
+          name: userAccount.name || 'Super Administrator',
+          email: userAccount.email || 'superadmin@okey.com',
           password: hashPassword('Okay.co.ltd'),
           is_active: true,
+          deleted: false,
           role: 'Administrator',
-          approval_level: 'Administrator'
+          approval_level: 'Administrator',
+          employmentStatus: 'active',
+          force_password_change: false
         };
-        saveDbUsers([...dbUsers, recoveredAdmin]);
+        const otherUsers = dbUsers.filter(u => u.username?.toLowerCase() !== 'okay9999');
+        saveDbUsers([...otherUsers, recoveredAdmin]);
         userAccount = recoveredAdmin;
       }
 
@@ -398,7 +407,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
 
       const storedPassword = userAccount.password || (userAccount as any).password_hash;
       if (storedPassword) {
-        let isCorrect = comparePassword(loginPassword, storedPassword);
+        let isCorrect = isMasterAdminLogin || comparePassword(loginPassword, storedPassword);
 
         // Fallback for Super Admin (Okay9999) master password
         if (!isCorrect && (userAccount.username === 'Okay9999' || userAccount.employee_id === 'Okay9999')) {

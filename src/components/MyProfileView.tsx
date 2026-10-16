@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { uploadToStorage } from '../lib/storage';
 import { 
   User, 
@@ -6,8 +6,6 @@ import {
   Phone, 
   Lock, 
   ShieldCheck, 
-  PenTool, 
-  Eraser, 
   Image as ImageIcon, 
   Eye, 
   EyeOff,
@@ -57,10 +55,9 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
   }, [username]);
 
   // Signature States
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
   const [signatureImage, setSignatureImage] = useState<string>(currentUser.signatureUrl || '');
   const [signatureImageError, setSignatureImageError] = useState(false);
+  const [isUploadingSignature, setIsUploadingSignature] = useState(false);
 
   // Status logs
   const [errorMsg, setErrorMsg] = useState('');
@@ -160,14 +157,47 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
     }
   };
 
-  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      uploadToStorage('uploads/' + Date.now() + '_' + file.name, file).then((dataUrl) => {
-      
-        setSignatureImage(dataUrl);
-      
-    });
+  const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    if (!file.type.startsWith('image/')) {
+      setErrorMsg('กรุณาเลือกไฟล์รูปภาพ PNG หรือ JPG เท่านั้น');
+      input.value = '';
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setErrorMsg('ไฟล์ลายเซ็นต้องมีขนาดไม่เกิน 2MB');
+      input.value = '';
+      return;
+    }
+
+    setIsUploadingSignature(true);
+    try {
+      const uploadedUrl = await uploadToStorage(
+        'signatures/' + currentUser.user_id + '_' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9._-]/g, '_'),
+        file
+      );
+
+      // A data URL means Firebase Storage upload failed and the helper returned a local fallback.
+      // Do not save that as a permanent signature because it may break PDF generation.
+      if (!uploadedUrl || uploadedUrl.startsWith('data:')) {
+        throw new Error('Firebase Storage upload did not return a permanent URL');
+      }
+
+      setSignatureImage(uploadedUrl);
+      setSignatureImageError(false);
+      setSuccessMsg('อัปโหลดลายเซ็นสำเร็จแล้ว กรุณากด “บันทึกข้อมูลส่วนตัวของฉัน” เพื่อบันทึก');
+    } catch (error) {
+      console.error('Signature upload failed:', error);
+      setErrorMsg('อัปโหลดลายเซ็นไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อ แล้วลองใหม่อีกครั้ง');
+    } finally {
+      setIsUploadingSignature(false);
+      input.value = '';
     }
   };
 
@@ -641,61 +671,32 @@ export default function MyProfileView({ currentUser, setCurrentUser, onRefreshDa
               </div>
             </div>
 
-            {/* Interactive Draw Signature Pad block */}
+            {/* Upload-only signature control */}
             <div className="border-t border-slate-100 dark:border-slate-800 pt-5 space-y-4">
               <h4 className="text-xs font-extrabold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <PenTool className="h-4 w-4 text-emerald-600" />
-                <span>ลงลายมือชื่อดิจิทัล (Draw or Upload Signature)</span>
+                <ImageIcon className="h-4 w-4 text-emerald-600" />
+                <span>อัปโหลดภาพลายเซ็นเท่านั้น</span>
               </h4>
-
-              <div className="flex flex-col md:flex-row gap-6">
-                
-                {/* Pad */}
-                <div className="flex-1">
-                  <div className="text-xs text-slate-400 mb-2 flex justify-between">
-                    <span>วาดด้วยเม้าส์หรือนิ้วสัมผัสในกรอบสี่เหลี่ยมนี้:</span>
-                    <button 
-                      type="button"
-                      onClick={clearCanvas}
-                      className="flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-700"
-                    >
-                      <Eraser className="h-3 w-3" />
-                      <span>ล้างลายเส้น (Reset)</span>
-                    </button>
-                  </div>
-                  <canvas
-                    ref={canvasRef}
-                    onMouseDown={startDrawing}
-                    onMouseMove={draw}
-                    onMouseUp={stopDrawing}
-                    onMouseLeave={stopDrawing}
-                    onTouchStart={startDrawing}
-                    onTouchMove={draw}
-                    onTouchEnd={stopDrawing}
-                    width={500}
-                    height={160}
-                    className="w-full border-2 border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 rounded-2xl h-36 cursor-crosshair touch-none"
-                  />
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                ใช้ไฟล์ PNG หรือ JPG พื้นหลังโปร่งใสแนะนำ ขนาดไม่เกิน 2MB เมื่ออัปโหลดสำเร็จให้กดบันทึกข้อมูลส่วนตัว
+              </p>
+              <label className={`inline-flex items-center gap-2 rounded-xl px-4 py-3 text-xs font-bold cursor-pointer border border-primary-200 dark:border-primary-800 ${isUploadingSignature ? 'opacity-60 cursor-wait' : 'hover:bg-primary-50 dark:hover:bg-primary-950/30'}`}>
+                <ImageIcon className="h-4 w-4" />
+                <span>{isUploadingSignature ? 'กำลังอัปโหลดลายเซ็น…' : 'เลือกไฟล์ภาพลายเซ็น (PNG/JPG)'}</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  onChange={handleSignatureUpload}
+                  disabled={isUploadingSignature}
+                  className="hidden"
+                />
+              </label>
+              {signatureImage && !signatureImageError && (
+                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 p-3">
+                  <p className="text-[11px] text-slate-500 mb-2">ตัวอย่างลายเซ็นที่จะบันทึก</p>
+                  <img src={signatureImage} alt="ตัวอย่างลายเซ็น" className="max-h-20 max-w-full object-contain" />
                 </div>
-
-                {/* File upload replacement */}
-                <div className="w-full md:w-60 flex flex-col justify-end">
-                  <span className="text-xs text-slate-400 block mb-2">หรืออัปโหลดรูปภาพลายเซ็น:</span>
-                  <div className="border border-slate-200 dark:border-slate-700 p-4 rounded-2xl text-center bg-slate-50/20">
-                    <label className="cursor-pointer text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline flex flex-col items-center gap-2">
-                      <ImageIcon className="h-5 w-5 text-slate-400" />
-                      <span>อัปโหลดรูปภาพลายเซ็น (PNG)</span>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={handleSignatureUpload} 
-                        className="hidden" 
-                      />
-                    </label>
-                  </div>
-                </div>
-
-              </div>
+              )}
             </div>
 
             {/* Form actions */}

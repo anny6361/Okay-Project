@@ -12,8 +12,8 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase client
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+const app = initializeApp(firebaseConfig, 'okay-legacy-source');
+export const legacyDb = getFirestore(app);
 
 const COLLECTIONS = [
   'okey_db_users', 'okey_db_rules', 'okey_db_logs', 'okey_db_departments',

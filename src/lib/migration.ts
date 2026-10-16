@@ -1,6 +1,6 @@
 import { db } from '../firebase';
-import { collection, doc, getDoc, getDocs, setDoc, writeBatch, WriteBatch } from 'firebase/firestore';
-import { DB_CACHE, sanitizeForFirestore } from './firestore-sync';
+import { doc, getDoc, setDoc, writeBatch, WriteBatch } from 'firebase/firestore';
+import { sanitizeForFirestore } from './firestore-sync';
 
 const BATCH_LIMIT = 450;
 
@@ -11,11 +11,9 @@ async function commitBatchQueue(batches: WriteBatch[]) {
 }
 
 /**
- * Import the original Okay ERP document store into the current normalized database.
- * This is additive/merge-only: it never deletes existing documents. The legacy
- * project remains read-only; after import, the current database is the live source.
- */
-/**
+ * Legacy migration utility retained for manual recovery only.
+ * The application does not run this automatically; Firestore is the live source.
+ *
  * Migrate the existing local database into the existing Firestore model.
  *
  * localStorage is intentionally preserved after migration. It remains a safe

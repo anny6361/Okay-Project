@@ -597,8 +597,8 @@ export default function DocumentPdfManagerView() {
       return;
     }
 
-    const matchedUser = users.find(u => u.name === selectedRequest.employeeName) || {
-      username: 'Okay0001',
+    const matchedUser = findRequesterProfile(selectedRequest, currentUsers) || {
+      username: selectedRequest.user_id || selectedRequest.created_by || '',
       position: selectedRequest.employeeRole || 'พนักงาน'
     };
 
@@ -607,7 +607,13 @@ export default function DocumentPdfManagerView() {
 
     // Map signature cards with registered signature images or pending placeholder
     const pdfStandardLevelsHtml = selectedRequest.approvalHistory.map((step, idx) => {
-      const matchingUser = users.find(u => (u.name || '').trim().toLocaleLowerCase() === (step.approverName || '').trim().toLocaleLowerCase());
+      const approverNameKey = normalizePersonName(step.approverName);
+      const matchingUser = currentUsers.find(u =>
+        !!approverNameKey && (
+          normalizePersonName(u.name) === approverNameKey ||
+          normalizePersonName([u.title, u.firstName, u.lastName].filter(Boolean).join(' ')) === approverNameKey
+        )
+      );
       const userSig = matchingUser?.signatureUrl;
       const isApproved = step.status === 'approved';
 
@@ -1400,7 +1406,7 @@ export default function DocumentPdfManagerView() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-450">ผู้ขอรับสิทธิ์:</span>
-                    <span className="font-bold text-slate-800 dark:text-slate-200">{requesterDisplayName} ({selectedRequest.department})</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">{findRequesterProfile(selectedRequest, getDbUsers())?.name || selectedRequest.employeeName || 'ไม่ระบุชื่อผู้ขอเบิก'} ({selectedRequest.department})</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-450">สถานะเดินเอกสาร:</span>
@@ -1724,7 +1730,13 @@ export default function DocumentPdfManagerView() {
 
                       {/* Approval Chain history cards */}
                       {selectedRequest.approvalHistory.map((step, idx) => {
-                        const matchingUser = users.find(u => (u.name || '').trim().toLocaleLowerCase() === (step.approverName || '').trim().toLocaleLowerCase());
+                        const approverNameKey = normalizePersonName(step.approverName);
+                        const matchingUser = currentUsers.find(u =>
+                          !!approverNameKey && (
+                            normalizePersonName(u.name) === approverNameKey ||
+                            normalizePersonName([u.title, u.firstName, u.lastName].filter(Boolean).join(' ')) === approverNameKey
+                          )
+                        );
                         const userSig = matchingUser?.signatureUrl;
                         const isApproved = step.status === 'approved';
 

@@ -14,12 +14,12 @@ export const CompanyLetterhead: React.FC<CompanyLetterheadProps> = ({
   className = '',
   rightContent
 }) => {
-  const companyName = companyData?.companyName || 'บริษัท โอเค เอ็กซ์เพนส์ แมเนจเมนท์ จำกัด (OKAY EXPENSE MANAGEMENT CO., LTD.)';
+  const companyName = companyData?.companyName || 'บริษัท โอคีย์ จำกัด';
   const logoUrl = companyData?.logoUrl || '';
   const address = companyData?.address || '99/9 ถนนพระราม 9 แขวงห้วยขวาง เขตห้วยขวาง กรุงเทพมหานคร 10310 (99/9 Rama IX Road, Huai Khwang, Bangkok 10310)';
   const taxId = companyData?.taxId || '0-1055-66000-11-2';
   const phone = companyData?.phone || '02-123-4567';
-  const email = companyData?.email || 'finance@okay.com';
+  const email = companyData?.email || '';
   
   // Extract initials for logo placeholder (e.g., OK)
   let initials = 'OK';
@@ -84,7 +84,7 @@ export const CompanyLetterhead: React.FC<CompanyLetterheadProps> = ({
             <span className="text-slate-300">|</span>
             <span><strong>อีเมล:</strong> {email}</span>
             <span className="text-slate-300">|</span>
-            <span><strong>เว็บไซต์:</strong> www.okay.com</span>
+            
           </p>
         </div>
 

@@ -97,7 +97,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingApprovalsCount
               <Wallet className="h-5 w-5" />
             </div>
           )}
-          <span className="font-bold text-lg tracking-tight truncate max-w-[200px]">{companyData?.companyName || 'OKAY Expense'}</span>
+          <span className="font-bold text-lg tracking-tight truncate max-w-[200px]">{companyData?.companyName || 'บริษัท โอคีย์ จำกัด'}</span>
         </div>
         <button 
           onClick={() => setIsOpen(!isOpen)}
@@ -133,7 +133,7 @@ export default function Sidebar({ activeTab, setActiveTab, pendingApprovalsCount
             )}
             <div className="min-w-0">
               <h1 className="font-bold text-white text-[15px] tracking-tight font-['Sarabun'] truncate leading-tight">
-                {companyData?.companyName || 'OKAY Expense'}
+                {companyData?.companyName || 'บริษัท โอคีย์ จำกัด'}
               </h1>
               <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">Enterprise Management</p>
             </div>

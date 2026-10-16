@@ -61,6 +61,33 @@ export default function DocumentPdfManagerView() {
 
   // Helper function to resolve category specific / name specific primary receipt image
 
+  // Normalize Thai names so titles/punctuation differences do not break profile matching.
+  const normalizePersonName = (value?: string) =>
+    (value || '')
+      .normalize('NFKC')
+      .replace(/^(นาย|นางสาว|นาง|น\.ส\.|น\.ส|ดร\.?|คุณ)\s*/u, '')
+      .replace(/[\s.\-_'’]/g, '')
+      .toLocaleLowerCase('th-TH');
+
+  // Resolve requester by stable user ID first, then employee/user codes, then normalized full name.
+  const findRequesterProfile = (req: ExpenseRequest, profileList: UserProfile[]) => {
+    const stableId = req.created_by || req.user_id;
+    if (stableId) {
+      const byId = profileList.find(u => u.user_id === stableId);
+      if (byId) return byId;
+    }
+
+    const requestName = normalizePersonName(req.employeeName);
+    return profileList.find(u =>
+      (!!u.employee_id && (u.employee_id === req.user_id || u.employee_id === req.created_by)) ||
+      (!!u.username && (u.username === req.user_id || u.username === req.created_by)) ||
+      (!!requestName && (
+        normalizePersonName(u.name) === requestName ||
+        normalizePersonName([u.title, u.firstName, u.lastName].filter(Boolean).join(' ')) === requestName
+      ))
+    );
+  };
+
   // Helper function to compile ALL request attachments:
   // Get all real attachments (primary receipt + uploaded evidence)
   const getAllRequestAttachments = (req: ExpenseRequest): string[] => {
@@ -161,13 +188,12 @@ export default function DocumentPdfManagerView() {
     const companyPhone = companyData?.phone || '02-123-4567';
     const companyEmail = companyData?.email || 'finance@okay.com';
 
-    // Find requester user details & signature from registered profiles
-    const requesterUser = users.find(u =>
-      (!!selectedRequest.created_by && u.user_id === selectedRequest.created_by) ||
-      (!!selectedRequest.user_id && u.user_id === selectedRequest.user_id) ||
-      (u.name || '').trim().toLocaleLowerCase() === (selectedRequest.employeeName || '').trim().toLocaleLowerCase()
-    );
+    // Refresh user profiles before rendering so a signature saved in My Profile is not stale.
+    const currentUsers = getDbUsers();
+    setUsers(currentUsers);
+    const requesterUser = findRequesterProfile(selectedRequest, currentUsers);
     const requesterSig = requesterUser?.signatureUrl || '';
+    const requesterDisplayName = requesterUser?.name || selectedRequest.employeeName || 'ไม่ระบุชื่อผู้ขอเบิก';
 
     // Resolve all attachments as real images for the PDF
     const allAttachments = getAllRequestAttachments(selectedRequest);
@@ -193,7 +219,13 @@ export default function DocumentPdfManagerView() {
       
       // Map signature cards with registered signature images or pending placeholder
       const pdfReplacementLevelsHtml = selectedRequest.approvalHistory.map((step, idx) => {
-        const matchingUser = users.find(u => (u.name || '').trim().toLocaleLowerCase() === (step.approverName || '').trim().toLocaleLowerCase());
+        const approverNameKey = normalizePersonName(step.approverName);
+        const matchingUser = currentUsers.find(u =>
+          !!approverNameKey && (
+            normalizePersonName(u.name) === approverNameKey ||
+            normalizePersonName([u.title, u.firstName, u.lastName].filter(Boolean).join(' ')) === approverNameKey
+          )
+        );
         const userSig = matchingUser?.signatureUrl;
         const isApproved = step.status === 'approved';
 
@@ -435,7 +467,7 @@ export default function DocumentPdfManagerView() {
               <div class="info-grid">
                 <div class="info-item">
                   <span>ผู้ขอเบิกจ่าย (Claimant / Requester)</span>
-                  <p>${selectedRequest.employeeName} (${selectedRequest.employeeRole})</p>
+                  <p>${requesterDisplayName} (${selectedRequest.employeeRole})</p>
                 </div>
                 <div class="info-item">
                   <span>หน่วยงาน / แผนกรับภาระ (Department)</span>
@@ -517,7 +549,7 @@ export default function DocumentPdfManagerView() {
                   <p style="font-weight: bold; margin: 0 0 4px 0; color: #1e293b; font-size: 10px; text-transform: uppercase;">ผู้ขอเบิกเงิน (Claimant)</p>
                   ${requesterSig ? `<img src="${requesterSig}" style="height: 38px; max-width: 90%; object-fit: contain; margin: 4px auto; display: block;" alt="Claimant Signature" />` : `<div style="height: 38px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 9px;">ยังไม่ได้บันทึกลายมือชื่อ</div>`}
                   <div>
-                    <p style="font-weight: 600; margin: 4px 0 2px 0; font-size: 11px; color: #1e293b;">${selectedRequest.employeeName}</p>
+                    <p style="font-weight: 600; margin: 4px 0 2px 0; font-size: 11px; color: #1e293b;">${requesterDisplayName}</p>
                     <p style="color: #3b82f6; font-weight: bold; margin: 0; font-size: 8px;">✓ SUBMITTED</p>
                     <p style="color: #94a3b8; font-size: 8px; margin: 2px 0 0 0;">${selectedRequest.date}</p>
                   </div>
@@ -787,7 +819,7 @@ export default function DocumentPdfManagerView() {
             <table class="meta-table">
               <tr>
                 <td class="meta-label">ชื่อผู้เบิกเงิน / Claimant</td>
-                <td>${selectedRequest.employeeName}</td>
+                <td>${requesterDisplayName}</td>
                 <td class="meta-label">รหัสพนักงาน / ID</td>
                 <td style="font-family: 'JetBrains Mono', monospace; font-weight: bold;">${matchedUser.username}</td>
               </tr>
@@ -1025,7 +1057,7 @@ export default function DocumentPdfManagerView() {
                 <p style="font-weight: bold; margin: 0 0 4px 0; color: #1e293b; font-size: 10px; text-transform: uppercase;">ผู้ขอเบิกเงิน (Claimant)</p>
                 ${requesterSig ? `<img src="${requesterSig}" style="height: 38px; max-width: 90%; object-fit: contain; margin: 4px auto; display: block;" alt="Claimant Signature" />` : `<div style="height: 38px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 9px;">ยังไม่ได้บันทึกลายมือชื่อ</div>`}
                 <div>
-                  <p style="font-weight: 600; margin: 4px 0 2px 0; font-size: 11px; color: #1e293b;">${selectedRequest.employeeName}</p>
+                  <p style="font-weight: 600; margin: 4px 0 2px 0; font-size: 11px; color: #1e293b;">${requesterDisplayName}</p>
                   <p style="color: #3b82f6; font-weight: bold; margin: 0; font-size: 8px;">✓ SUBMITTED</p>
                   <p style="color: #94a3b8; font-size: 8px; margin: 2px 0 0 0;">${selectedRequest.date}</p>
                 </div>
@@ -1368,7 +1400,7 @@ export default function DocumentPdfManagerView() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-450">ผู้ขอรับสิทธิ์:</span>
-                    <span className="font-bold text-slate-800 dark:text-slate-200">{selectedRequest.employeeName} ({selectedRequest.department})</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">{requesterDisplayName} ({selectedRequest.department})</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-450">สถานะเดินเอกสาร:</span>
@@ -1508,19 +1540,17 @@ export default function DocumentPdfManagerView() {
             </div>
 
             {selectedRequest ? (() => {
-              const matchedUser = users.find(u => u.name === selectedRequest.employeeName) || {
-                username: 'Okay0001',
+              const currentUsers = getDbUsers();
+              const matchedUser = findRequesterProfile(selectedRequest, currentUsers) || {
+                username: selectedRequest.user_id || selectedRequest.created_by || '',
                 position: selectedRequest.employeeRole || 'พนักงาน'
               };
               const settlement = getSettlementDetails(selectedRequest);
               
-              // Resolve requester details & signature
-              const requesterUser = users.find(u =>
-                (!!selectedRequest.created_by && u.user_id === selectedRequest.created_by) ||
-                (!!selectedRequest.user_id && u.user_id === selectedRequest.user_id) ||
-                (u.name || '').trim().toLocaleLowerCase() === (selectedRequest.employeeName || '').trim().toLocaleLowerCase()
-              );
+              // Resolve requester details & signature using the same identity matching as the PDF output.
+              const requesterUser = findRequesterProfile(selectedRequest, currentUsers);
               const requesterSig = requesterUser?.signatureUrl || '';
+              const requesterDisplayName = requesterUser?.name || selectedRequest.employeeName || 'ไม่ระบุชื่อผู้ขอเบิก';
 
               // Fetch compiled attachments
               const compiledAttachments = getAllRequestAttachments(selectedRequest);
@@ -1567,7 +1597,7 @@ export default function DocumentPdfManagerView() {
                     <tbody>
                       <tr className="border-b border-slate-100 dark:border-slate-800">
                         <td className="py-2.5 font-bold text-slate-500 w-1/4">ชื่อผู้เบิก / Claimant:</td>
-                        <td className="py-2.5 text-slate-900 dark:text-white font-bold">{selectedRequest.employeeName}</td>
+                        <td className="py-2.5 text-slate-900 dark:text-white font-bold">{requesterDisplayName}</td>
                         <td className="py-2.5 font-bold text-slate-500 w-1/4">รหัสพนักงาน / ID:</td>
                         <td className="py-2.5 text-slate-900 dark:text-white font-mono font-bold">{matchedUser.username}</td>
                       </tr>
@@ -1687,7 +1717,7 @@ export default function DocumentPdfManagerView() {
                           )}
                         </div>
                         <div>
-                          <p className="font-black text-slate-800 dark:text-slate-100 leading-tight">{selectedRequest.employeeName}</p>
+                          <p className="font-black text-slate-800 dark:text-slate-100 leading-tight">{requesterDisplayName}</p>
                           <p className="text-[8px] text-slate-400 mt-0.5 truncate">{selectedRequest.employeeRole || 'พนักงาน'}</p>
                         </div>
                       </div>

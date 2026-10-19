@@ -1,4 +1,4 @@
-import { getFromCache, saveToFirestore } from '../lib/firestore-sync';
+import { getFromCache, saveToFirestore, isDemoEmployeeAccount } from '../lib/firestore-sync';
 import { 
   UserProfile, 
   ApprovalRule, 
@@ -217,6 +217,13 @@ export function getDbUsers(): UserProfile[] {
       let parsed = (typeof users === 'string' ? JSON.parse(users) : users);
       let modified = false;
 
+      // Remove known synthetic employee records from the app cache; do not delete Firestore documents here.
+      if (Array.isArray(parsed)) {
+        const realUsers = parsed.filter((u: UserProfile) => !isDemoEmployeeAccount(u));
+        if (realUsers.length !== parsed.length) modified = true;
+        parsed = realUsers;
+      }
+
       // Ensure Super Administrator is always present
       const hasSuperAdmin = parsed.some((u: UserProfile) => u.username === 'Okay9999');
       if (!hasSuperAdmin) {
@@ -319,7 +326,8 @@ export function getDbUsers(): UserProfile[] {
 }
 
 export function saveDbUsers(users: UserProfile[]) {
-  let finalUsers = [...users];
+  // Guard against demo accounts being reintroduced by stale UI state.
+  let finalUsers = users.filter(u => !isDemoEmployeeAccount(u));
   const hasSuperAdmin = finalUsers.some(u => u.username === 'Okay9999');
   if (!hasSuperAdmin) {
     const superadmin = INITIAL_USERS.find(iu => iu.username === 'Okay9999');

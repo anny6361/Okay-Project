@@ -7,6 +7,15 @@ let isInitialized = false;
 let globalRenderTrigger: () => void = () => {};
 const FIRESTORE_BATCH_LIMIT = 450;
 
+// Demo accounts that accidentally entered the shared users collection.
+// Okay000 (three zeros) is a real company account and is deliberately excluded from this filter.
+export function isDemoEmployeeAccount(user: any): boolean {
+  const identifiers = [user?.username, user?.employee_id, user?.employeeId, user?.code]
+    .filter((value): value is string => typeof value === 'string')
+    .map(value => value.trim());
+  return identifiers.some(value => /^Okay000[0-5]$/i.test(value));
+}
+
 type FirestoreWrite = {
   ref: any;
   data: any;
@@ -83,7 +92,11 @@ export function setupFirestoreSync() {
   isInitialized = true;
 
   onSnapshot(collection(db, 'users'), (snap) => {
-    DB_CACHE['okey_db_users'] = snap.docs.map(d => d.data());
+    // Hide known demo/test employee accounts from the live employee directory.
+    // Keep the real Okay000 account (three zeros) untouched.
+    DB_CACHE['okey_db_users'] = snap.docs
+      .map(d => d.data())
+      .filter((u: any) => !isDemoEmployeeAccount(u));
     globalRenderTrigger();
   }, (error) => console.error('Firestore users sync error:', error));
 
@@ -238,7 +251,13 @@ export async function saveToFirestore(localKey: string, data: any) {
     };
 
     if (localKey === 'okey_db_users') {
-      (data || []).forEach((u: any) => {
+      // Never re-publish known demo employee accounts from stale browser caches.
+      const realUsers = (data || []).filter((u: any) => !isDemoEmployeeAccount(u));
+      DB_CACHE[localKey] = realUsers;
+      try { localStorage.setItem(localKey, JSON.stringify(realUsers)); } catch (e) {
+        console.warn('localStorage save error for okey_db_users:', e);
+      }
+      realUsers.forEach((u: any) => {
         if (!u?.user_id) return;
         const cleanUser = sanitizeForFirestore(u);
         addWrite(doc(db, 'users', u.user_id), cleanUser);

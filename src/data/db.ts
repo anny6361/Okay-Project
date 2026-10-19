@@ -602,7 +602,10 @@ export const INITIAL_CATEGORIES_MASTER: ExpenseCategoryMaster[] = [
   { id: 'other', name: 'ค่าใช้จ่ายอื่น ๆ', limitPerRequest: 5000, requiresReceipt: false, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 20 },
   { id: 'remaining_labor', name: 'ค่าพนักงานเก็บงานส่วนที่เหลือ', limitPerRequest: 20000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 21 },
   { id: 'broken_meter', name: 'ค่ามิเตอร์พัง', limitPerRequest: 20000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 22 },
-  { id: 'broken_equipment', name: 'ค่าอุปกรณ์พัง', limitPerRequest: 20000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 23 }
+  { id: 'broken_equipment', name: 'ค่าอุปกรณ์พัง', limitPerRequest: 20000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 23 },
+  { id: 'postage', name: 'ค่าไปรษณีย์', limitPerRequest: 10000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 24 },
+  { id: 'penalty', name: 'ค่าปรับ', limitPerRequest: 50000, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 25 },
+  { id: 'debt_payment_121', name: 'ค่าหนี้ชำระ 121', limitPerRequest: 999999999, requiresReceipt: true, color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700', isActive: true, order: 26 }
 ];
 
 export const INITIAL_EXPENSE_TYPES: ExpenseTypeMaster[] = [
